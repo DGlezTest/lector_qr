@@ -14,12 +14,12 @@ echo "====================================================="
 SETUP_DIR=$(dirname "$(readlink -f "$0")")
 PROYECTO_DIR=$(dirname "$SETUP_DIR")
 
-# 2. Actualizar e instalar dependencias del sistema operativo (Corregido para Trixie)
+# 2. Actualizar e instalar dependencias del sistema operativo (Actualizado para GPIO nativo)
 echo "📦 1/6 Instalando dependencias base del sistema..."
 apt-get update -y
 
-echo "📥 Instalando Supervisor, SWIG y Python venv..."
-apt-get install -y supervisor python3-pip python3-dev python3-venv swig -y
+echo "📥 Instalando Supervisor, SWIG, Python venv y librerías nativas GPIO..."
+apt-get install -y supervisor python3-pip python3-dev python3-venv swig liblgpio-dev liblgpio1 -y
 
 echo "📥 Instalando entorno de ventanas y herramientas gráficas..."
 apt-get install -y xserver-xorg xinit x11-xserver-utils unclutter chromium-browser -y
@@ -42,7 +42,7 @@ else
     echo "ℹ️  Ya existe un archivo config.json en la raíz. No se sobrescribió."
 fi
 
-# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS (Con soporte SWIG para lgpio)
+# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS (Con enlace a liblgpio definitivo)
 echo "-----------------------------------------------------"
 echo "🐍 3/6 Creando Entorno Virtual (venv) en la raíz del proyecto..."
 
@@ -62,7 +62,6 @@ if [ -f "$SETUP_DIR/kiosco.sh.template" ]; then
     cp "$SETUP_DIR/kiosco.sh.template" "$PROYECTO_DIR/kiosco.sh"
     chmod +x "$PROYECTO_DIR/kiosco.sh"
 else
-    # Si no existiera el template por alguna razón, lo creamos de seguridad
     cat <<EOT > "$PROYECTO_DIR/kiosco.sh"
 #!/bin/bash
 xset s off
