@@ -1,0 +1,8 @@
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0
+opencv-python-headless>=4.8.0.74
+pyzbar>=0.1.8
+requests>=2.31.0
+httpx>=0.24.1
+rpi-lgpio>=0.6

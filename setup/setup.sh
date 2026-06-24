@@ -7,22 +7,24 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "====================================================="
-echo "⚙️  CONFIGURACIÓN AUTOMÁTICA ADAPTADA PARA TRIXIE ⚙️"
+echo "⚙️  CONFIGURACIÓN AUTOMÁTICA COMPLETA PARA TRIXIE ⚙️"
 echo "====================================================="
 
 # Obtener rutas absolutas dinámicas
 SETUP_DIR=$(dirname "$(readlink -f "$0")")
 PROYECTO_DIR=$(dirname "$SETUP_DIR")
 
-# 2. Actualizar e instalar dependencias del sistema operativo (Compatibilizado con Trixie)
+# 2. Actualizar e instalar dependencias del sistema operativo (Corregido para Trixie)
 echo "📦 1/6 Instalando dependencias base del sistema..."
 apt-get update -y
 
-# Instalamos uno por uno o en bloques seguros para que si algo falla, no cancele todo
-apt-get install -y supervisor python3-pip python3-dev python3-venv libgl1-mesa-glx -y
+echo "📥 Instalando Supervisor, SWIG y Python venv..."
+apt-get install -y supervisor python3-pip python3-dev python3-venv swig -y
+
+echo "📥 Instalando entorno de ventanas y herramientas gráficas..."
 apt-get install -y xserver-xorg xinit x11-xserver-utils unclutter chromium-browser -y
 
-# En Trixie libzbar0 cambió a libzbar0t64, apt lo resuelve automáticamente con este flag:
+echo "📥 Instalando decodificador de QR nativo..."
 apt-get install -y libzbar0t64 || apt-get install -y libzbar0
 
 # 3. Mover el config.json a la raíz si no existe
@@ -37,10 +39,10 @@ if [ ! -f "$PROYECTO_DIR/config.json" ]; then
         exit 1
     fi
 else
-    echo "ℹ️  Ya existe un archivo config.json en la raíz."
+    echo "ℹ️  Ya existe un archivo config.json en la raíz. No se sobrescribió."
 fi
 
-# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS
+# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS (Con soporte SWIG para lgpio)
 echo "-----------------------------------------------------"
 echo "🐍 3/6 Creando Entorno Virtual (venv) en la raíz del proyecto..."
 
@@ -60,7 +62,7 @@ if [ -f "$SETUP_DIR/kiosco.sh.template" ]; then
     cp "$SETUP_DIR/kiosco.sh.template" "$PROYECTO_DIR/kiosco.sh"
     chmod +x "$PROYECTO_DIR/kiosco.sh"
 else
-    # Si por alguna razón no está el template, creamos el kiosco.sh inline seguro
+    # Si no existiera el template por alguna razón, lo creamos de seguridad
     cat <<EOT > "$PROYECTO_DIR/kiosco.sh"
 #!/bin/bash
 xset s off
@@ -90,7 +92,6 @@ fi
 echo "-----------------------------------------------------"
 echo "📋 5/6 Registrando rutas en la configuración de Supervisor..."
 
-# Asegurar que la carpeta de destino exista por si las dudas
 mkdir -p /etc/supervisor/conf.d/
 
 cat <<EOT > /etc/supervisor/conf.d/mi_escaner.conf
@@ -113,7 +114,7 @@ stdout_logfile=/var/log/hardware_orchestrator.out.log
 user=root
 EOT
 
-# 7. Levantar los servicios en la Raspberry Pi
+# 7. Habilitar, arrancar y sincronizar Supervisorctl
 echo "-----------------------------------------------------"
 echo "🚀 6/6 Lanzando servicios y orquestadores independientes..."
 systemctl enable supervisor
@@ -123,7 +124,8 @@ supervisorctl update
 supervisorctl restart all
 
 echo "====================================================="
-echo "✅ ¡PROVISIONAMIENTO CON VENV COMPLETADO!"
-echo "📍 Directorio: $PROYECTO_DIR"
-echo "🖥️  Para aplicar cambios de pantalla por completo, ejecuta: sudo reboot"
+echo "✅ ¡PROVISIONAMIENTO CON VENV COMPLETADO CON ÉXITO!"
+echo "📍 Directorio raíz: $PROYECTO_DIR"
+echo "🤖 Entorno virtual listo."
+echo "🖥️  Para ver la pantalla en modo Kiosco, ejecuta: sudo reboot"
 echo "====================================================="
