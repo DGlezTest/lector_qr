@@ -1,0 +1,29 @@
+{
+    "SERVER_URL": "https://tu-servidor-central.com/api/v1/auth-qr",
+    "PI_USERNAME": "usuario_pi_01",
+    "PI_PASSWORD": "password_temporal_o_recibido",
+    "CAMERA": {
+        "DEVICE_INDEX": 0,
+        "WIDTH": 640,
+        "HEIGHT": 480,
+        "FLIP_VERTICAL": false,
+        "FLIP_HORIZONTAL": false
+    },
+    "GPIO_PINS": {
+        "ENTRADAS": {
+            "SENSOR_PROXIMIDAD": 24,
+            "SENSOR_PUERTA_CERRADA": 22
+        },
+        "SALIDAS": {
+            "RELAY_ABRIR_MOTOR": 18,
+            "RELAY_CERRAR_MOTOR": 27,
+            "LED_ESTADO_VERDE": 23,
+            "LED_ESTADO_ROJO": 25
+        }
+    },
+    "TIEMPOS_PUERTA": {
+        "TIEMPO_APERTURA_MOTOR": 2.5,
+        "TIEMPO_ESPERA_PEATON": 5.0,
+        "TIEMPO_CIERRE_MOTOR": 2.5
+    }
+}
