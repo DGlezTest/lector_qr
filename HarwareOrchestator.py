@@ -1,86 +1,89 @@
 import cv2
 import json
-import time 
+import time
 import os
-import request 
+import requests
 from pyzbar.pyzbar import decode
 from requests.auth import HTTPBasicAuth
-import Rpi.GPIO as GPIO
+# RPi.GPIO se reemplaza internamente por la emulación de rpi-lgpio
+import RPi.GPIO as GPIO 
 
 class HardwareOrchestrator:
-    def __init__(self, config_path="config.json"):
-        self.config_path = config_path
+    def __init__(self, config_name="config.json"):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.config_path = os.path.join(base_dir, config_name)
+        
+        print(f"[ORQUESTADOR] Cargando configuración desde: {self.config_path}")
         self.load_config()
         self.setup_gpio()
         self.setup_camera()
 
-
     def load_config(self):
-        with open(self.config_path, 'r') as f:
+        with open(self.config_path, "r") as f:
             self.config = json.load(f)
 
-    def save_config(self):
-        with open(self.config_path, 'w')as f:
-            json.dump(self.config, f, indent=4)
-
     def setup_gpio(self):
-        GPIO.setmode(GPIO.BCM)
+        # En rpi-lgpio / Trixie, setmode suele venir preconfigurado en BCM de forma nativa
+        try:
+            GPIO.setmode(GPIO.BCM)
+        except Exception:
+            pass # Si la emulación lo maneja directo, ignoramos la advertencia
+            
         entradas = self.config["GPIO_PINS"]["ENTRADAS"]
         salidas = self.config["GPIO_PINS"]["SALIDAS"]
-
-        # Configuramos los pines de entrada
+        
+        # Configurar Entradas (PUD_DOWN se emula correctamente en chips modernos)
         for pin in entradas.values():
             GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
-        # Configuramos los pines de salida
+            
+        # Configurar Salidas
         for pin in salidas.values():
             GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 
     def setup_camera(self):
         cam_conf = self.config["CAMERA"]
-        self.cap = cv2.VideoCapture(cam_conf["CAMERA_INDEX"])
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_conf["FRAME_WIDTH"])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_conf["FRAME_HEIGHT"])
+        self.cap = cv2.VideoCapture(cam_conf["DEVICE_INDEX"])
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_conf["WIDTH"])
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_conf["HEIGHT"])
 
     def aplicar_giro_camara(self, frame):
         cam_conf = self.config["CAMERA"]
         if cam_conf["FLIP_VERTICAL"] and cam_conf["FLIP_HORIZONTAL"]:
-            frame = cv2.flip(frame, -1)
+            return cv2.flip(frame, -1)
         elif cam_conf["FLIP_VERTICAL"]:
-            frame = cv2.flip(frame, 0)
+            return cv2.flip(frame, 0)
         elif cam_conf["FLIP_HORIZONTAL"]:
-            frame = cv2.flip(frame, 1)
+            return cv2.flip(frame, 1)
         return frame
-    
+
     def secuenciar_puerta(self):
         salidas = self.config["GPIO_PINS"]["SALIDAS"]
         tiempos = self.config["TIEMPOS_PUERTA"]
         
+        print("[HARDWARE] Iniciando secuencia de acceso...")
+        GPIO.output(salidas["LED_ESTADO_VERDE"], GPIO.HIGH)
         
-        print("[Hardware] iniciando secuencia de acceso...")
-        GPIO.output(salidas["INDICADOR_VERDE"], GPIO.HIGH)
+        print("[HARDWARE] Abriendo puerta...")
+        GPIO.output(salidas["RELAY_ABRIR_MOTOR"], GPIO.HIGH)
+        time.sleep(tiempos["TIEMPO_APERTURA_MOTOR"])
+        GPIO.output(salidas["RELAY_ABRIR_MOTOR"], GPIO.LOW)
+        
+        print("[HARDWARE] Puerta abierta. Esperando peatón...")
+        time.sleep(tiempos["TIEMPO_ESPERA_PEATON"])
+        
+        print("[HARDWARE] Cerrando puerta...")
+        GPIO.output(salidas["RELAY_CERRAR_MOTOR"], GPIO.HIGH)
+        time.sleep(tiempos["TIEMPO_CIERRE_MOTOR"])
+        GPIO.output(salidas["RELAY_CERRAR_MOTOR"], GPIO.LOW)
+        
+        GPIO.output(salidas["LED_ESTADO_VERDE"], GPIO.LOW)
+        print("[HARDWARE] Secuencia finalizada.")
 
-        #Abrimos puertas
-        GPIO.output(salidas["RELAY_MOTOR_1"], GPIO.HIGH)
-        GPIO.output(salidas["RELAY_MOTOR_2"], GPIO.HIGH)
-        time.sleep(tiempos["TIEMPO:APERTURA_MOTOR"])
-
-        #Duracion con la puerta abierta
-        time.sleep(tiempos["PUERTA_ESPERA_PEATON"])
-
-        #cerramos puertas
-        GPIO.output(salidas["RELAY_MOTOR_1"], GPIO.LOW)
-        GPIO.output(salidas["RELAY_MOTOR_2"], GPIO.LOW)
-        time.sleep(tiempos["TIEMPO:CERRADO_MOTOR"])
-        GPIO.output(salidas["INDICADOR_VERDE"], GPIO.LOW)
-
-        print("[HARDWARE] Secuencia finalizada. Puerta Asegurada.")
-
-    def encender_led_rojo(self):
+    def encender_led_error(self):
         salidas = self.config["GPIO_PINS"]["SALIDAS"]
-        GPIO.output(salidas["INDICADOR_ROJO"], GPIO.HIGH)  
+        GPIO.output(salidas["LED_ESTADO_ROJO"], GPIO.HIGH)
         time.sleep(2.0)
-        GPIO.output(salidas["INDICADOR_ROJO"], GPIO.LOW)
+        GPIO.output(salidas["LED_ESTADO_ROJO"], GPIO.LOW)
 
     def consultar_servidor_central(self, qr_token):
         try:
@@ -96,20 +99,18 @@ class HardwareOrchestrator:
             return False, None
 
     def notificar_pantalla_local(self, status, nombre=""):
-        """Envía el resultado al Orquestador del Servidor Local para que actualice el JS"""
         try:
             requests.post("http://localhost:8000/api/evento-local", json={"status": status, "nombre": nombre}, timeout=2)
         except Exception:
-            pass # Si el servidor web está caído, el hardware no se detiene
+            pass
 
     def run(self):
-        print("[ORQUESTADOR HARDWARE] Ejecutándose de forma independiente...")
+        print("[ORQUESTADOR HARDWARE] Ejecutándose en Trixie de forma independiente...")
         ultimo_qr = None
         entradas = self.config["GPIO_PINS"]["ENTRADAS"]
         
         try:
             while True:
-                # El sensor de proximidad activa la lectura para no gastar recursos continuos
                 if GPIO.input(entradas["SENSOR_PROXIMIDAD"]) == GPIO.HIGH:
                     ret, frame = self.cap.read()
                     if not ret:
@@ -120,30 +121,26 @@ class HardwareOrchestrator:
                     
                     for qr in qr_codes:
                         contenido_qr = qr.data.decode("utf-8")
-                        
                         if contenido_qr != ultimo_qr:
                             ultimo_qr = contenido_qr
                             
-                            # 1. Validar remotamente
                             exito, nombre_usuario = self.consultar_servidor_central(contenido_qr)
-                            
                             if exito:
-                                # 2. Avisar al orquestador del servidor (Pantalla JS)
                                 self.notificar_pantalla_local("success", nombre_usuario)
-                                # 3. Mover motores/relevadores locales
                                 self.secuenciar_puerta()
                             else:
                                 self.notificar_pantalla_local("denied")
                                 self.encender_led_error()
                                 
                             ultimo_qr = None
-                
                 time.sleep(0.1)
         finally:
-            GPIO.cleanup()
+            try:
+                GPIO.cleanup()
+            except Exception:
+                pass
             self.cap.release()
 
 if __name__ == "__main__":
     orchestrator = HardwareOrchestrator()
     orchestrator.run()
-    
