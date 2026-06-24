@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 1. Asegurar que el script se ejecute como ROOT
+# 1. Asegurar que el script se ejecute como ROOT (necesario para configurar servicios)
 if [ "$EUID" -ne 0 ]; then
   echo "❌ Por favor, ejecuta este script usando sudo: sudo ./setup.sh"
   exit 1
@@ -14,7 +14,7 @@ echo "====================================================="
 SETUP_DIR=$(dirname "$(readlink -f "$0")")
 PROYECTO_DIR=$(dirname "$SETUP_DIR")
 
-# 2. Actualizar e instalar dependencias del sistema operativo (Actualizado para GPIO nativo)
+# 2. Actualizar e instalar dependencias del sistema operativo
 echo "📦 1/6 Instalando dependencias base del sistema..."
 apt-get update -y
 
@@ -42,7 +42,7 @@ else
     echo "ℹ️  Ya existe un archivo config.json en la raíz. No se sobrescribió."
 fi
 
-# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS (Con enlace a liblgpio definitivo)
+# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS
 echo "-----------------------------------------------------"
 echo "🐍 3/6 Creando Entorno Virtual (venv) en la raíz del proyecto..."
 
@@ -55,7 +55,7 @@ echo "📥 Instalando librerías desde requirements.txt dentro del venv..."
 "$PROYECTO_DIR/.venv/bin/pip" install --upgrade pip
 "$PROYECTO_DIR/.venv/bin/pip" install -r "$SETUP_DIR/requirements.txt"
 
-# 5. CONFIGURACIÓN DEL MODO KIOSCO
+# 5. CONFIGURACIÓN DEL MODO KIOSCO PANTALLA LOCAL
 echo "-----------------------------------------------------"
 echo "🖥️  4/6 Configurando arranque en Modo Kiosco..."
 if [ -f "$SETUP_DIR/kiosco.sh.template" ]; then
@@ -87,9 +87,9 @@ fi
 EOT
 fi
 
-# 6. REGISTRO EN SUPERVISOR APUNTANDO AL VENV
+# 6. NUEVO: REGISTRO DINÁMICO EN SUPERVISOR APUNTANDO A LAS RUTAS CORREGIDAS
 echo "-----------------------------------------------------"
-echo "📋 5/6 Registrando rutas en la configuración de Supervisor..."
+echo "📋 5/6 Escribiendo configuración de Supervisor de forma automática..."
 
 mkdir -p /etc/supervisor/conf.d/
 
@@ -113,6 +113,8 @@ stdout_logfile=/var/log/hardware_orchestrator.out.log
 user=root
 EOT
 
+echo "✅ Configuración de Supervisor inyectada en /etc/supervisor/conf.d/mi_escaner.conf"
+
 # 7. Habilitar, arrancar y sincronizar Supervisorctl
 echo "-----------------------------------------------------"
 echo "🚀 6/6 Lanzando servicios y orquestadores independientes..."
@@ -123,8 +125,7 @@ supervisorctl update
 supervisorctl restart all
 
 echo "====================================================="
-echo "✅ ¡PROVISIONAMIENTO CON VENV COMPLETADO CON ÉXITO!"
+echo "✅ ¡PROVISIONAMIENTO Y SERVICIOS CONFIGURADOS CON ÉXITO!"
 echo "📍 Directorio raíz: $PROYECTO_DIR"
-echo "🤖 Entorno virtual listo."
 echo "🖥️  Para ver la pantalla en modo Kiosco, ejecuta: sudo reboot"
 echo "====================================================="
