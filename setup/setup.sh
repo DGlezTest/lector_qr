@@ -7,65 +7,75 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "====================================================="
-echo "⚙️  INICIANDO CONFIGURACIÓN AUTOMÁTICA DEL PI + KIOSCO ⚙️"
+echo "⚙️  CONFIGURACIÓN AUTOMÁTICA ADAPTADA PARA TRIXIE ⚙️"
 echo "====================================================="
 
 # Obtener rutas absolutas dinámicas
 SETUP_DIR=$(dirname "$(readlink -f "$0")")
 PROYECTO_DIR=$(dirname "$SETUP_DIR")
 
-# 2. Actualizar e instalar dependencias (Incluyendo entorno gráfico mínimo para Kiosco)
-echo "📦 1/6 Instalando Supervisor, dependencias de red y entorno gráfico Kiosco..."
+# 2. Actualizar e instalar dependencias del sistema operativo (Compatibilizado con Trixie)
+echo "📦 1/6 Instalando dependencias base del sistema..."
 apt-get update -y
-apt-get install -y supervisor python3-pip python3-dev libzbar0 wpa-supplicant \
-                   xserver-xorg xinit x11-xserver-utils unclutter chromium-browser
 
-# 3. Configurar Red Wi-Fi de forma interactiva (Opcional)
-echo "-----------------------------------------------------"
-read -p "❓ ¿Deseas configurar una red Wi-Fi en este momento? (s/n): " CONFIG_WIFI
-if [ "$CONFIG_WIFI" = "s" ] || [ "$CONFIG_WIFI" = "S" ]; then
-    read -p "⌨️  Ingresa el nombre de la red (SSID): " WIFI_SSID
-    read -s -p "⌨️  Ingresa la contraseña de la red: " WIFI_PASS
-    echo ""
-    
-    cp "$SETUP_DIR/wpa_supplicant.conf.template" /etc/wpa_supplicant/wpa_supplicant.conf
-    sed -i "s/REPLACE_SSID/$WIFI_SSID/g" /etc/wpa_supplicant/wpa_supplicant.conf
-    sed -i "s/REPLACE_PASSWORD/$WIFI_PASS/g" /etc/wpa_supplicant/wpa_supplicant.conf
-    
-    echo "📶 Red Wi-Fi escrita en el sistema."
-    wpa_cli -i wlan0 reconfigure
-fi
+# Instalamos uno por uno o en bloques seguros para que si algo falla, no cancele todo
+apt-get install -y supervisor python3-pip python3-dev python3-venv libgl1-mesa-glx -y
+apt-get install -y xserver-xorg xinit x11-xserver-utils unclutter chromium-browser -y
 
-# 4. Instalar los requerimientos de Python
-echo "-----------------------------------------------------"
-echo "🐍 2/6 Instalando librerías de Python desde requirements.txt..."
-pip3 install -r "$SETUP_DIR/requirements.txt" --break-system-packages
+# En Trixie libzbar0 cambió a libzbar0t64, apt lo resuelve automáticamente con este flag:
+apt-get install -y libzbar0t64 || apt-get install -y libzbar0
 
-# 5. Mover el config.json a la raíz si no existe
+# 3. Mover el config.json a la raíz si no existe
 echo "-----------------------------------------------------"
-echo "⚙️  3/6 Desplegando archivo de configuración config.json..."
+echo "⚙️  2/6 Desplegando archivo de configuración config.json..."
 if [ ! -f "$PROYECTO_DIR/config.json" ]; then
-    cp "$SETUP_DIR/config.json" "$PROYECTO_DIR/config.json"
-    echo "📄 Plantilla config.json copiada a la raíz."
+    if [ -f "$SETUP_DIR/config.json" ]; then
+        cp "$SETUP_DIR/config.json" "$PROYECTO_DIR/config.json"
+        echo "📄 Plantilla config.json copiada a la raíz con éxito."
+    else
+        echo "❌ Error crítico: No se encontró config.json en $SETUP_DIR"
+        exit 1
+    fi
 else
     echo "ℹ️  Ya existe un archivo config.json en la raíz."
 fi
 
-# 6. CONFIGURACIÓN DEL MODO KIOSCO (Inicio automático en pantalla HDMI)
+# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS
+echo "-----------------------------------------------------"
+echo "🐍 3/6 Creando Entorno Virtual (venv) en la raíz del proyecto..."
+
+if [ ! -d "$PROYECTO_DIR/.venv" ]; then
+    python3 -m venv "$PROYECTO_DIR/.venv"
+    echo "✅ Entorno virtual creado con éxito."
+fi
+
+echo "📥 Instalando librerías desde requirements.txt dentro del venv..."
+"$PROYECTO_DIR/.venv/bin/pip" install --upgrade pip
+"$PROYECTO_DIR/.venv/bin/pip" install -r "$SETUP_DIR/requirements.txt"
+
+# 5. CONFIGURACIÓN DEL MODO KIOSCO
 echo "-----------------------------------------------------"
 echo "🖥️  4/6 Configurando arranque en Modo Kiosco..."
+if [ -f "$SETUP_DIR/kiosco.sh.template" ]; then
+    cp "$SETUP_DIR/kiosco.sh.template" "$PROYECTO_DIR/kiosco.sh"
+    chmod +x "$PROYECTO_DIR/kiosco.sh"
+else
+    # Si por alguna razón no está el template, creamos el kiosco.sh inline seguro
+    cat <<EOT > "$PROYECTO_DIR/kiosco.sh"
+#!/bin/bash
+xset s off
+xset s noblank
+xset -dpms
+unclutter -idle 0.5 -root &
+chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:8000
+EOT
+    chmod +x "$PROYECTO_DIR/kiosco.sh"
+fi
 
-# Copiar el script de lanzamiento a la raíz y darle permisos
-cp "$SETUP_DIR/kiosco.sh.template" "$PROYECTO_DIR/kiosco.sh"
-chmod +x "$PROYECTO_DIR/kiosco.sh"
-
-# Configurar el archivo .xinitrc del sistema para que sepa qué ejecutar al abrir los gráficos
 cat <<EOT > /root/.xinitrc
 exec $PROYECTO_DIR/kiosco.sh
 EOT
 
-# Crear un servicio en Supervisor o añadirlo al bashrc/systemd para que lance el entorno gráfico al bootear.
-# La forma más limpia en Raspberry Pi OS Lite es indicarle a la terminal que si está en la tty1 (pantalla física), inicie X.
 if ! grep -q "startx" /root/.bashrc; then
     cat <<EOT >> /root/.bashrc
 
@@ -76,13 +86,16 @@ fi
 EOT
 fi
 
-# 7. Preparar y mover la configuración de Supervisor para los Orquestadores Backend
+# 6. REGISTRO EN SUPERVISOR APUNTANDO AL VENV
 echo "-----------------------------------------------------"
 echo "📋 5/6 Registrando rutas en la configuración de Supervisor..."
 
+# Asegurar que la carpeta de destino exista por si las dudas
+mkdir -p /etc/supervisor/conf.d/
+
 cat <<EOT > /etc/supervisor/conf.d/mi_escaner.conf
 [program:server_orchestrator]
-command=/usr/bin/python3 $PROYECTO_DIR/server_orchestrator.py
+command=$PROYECTO_DIR/.venv/bin/python3 $PROYECTO_DIR/server_orchestrator.py
 directory=$PROYECTO_DIR
 autostart=true
 autorestart=true
@@ -91,7 +104,7 @@ stdout_logfile=/var/log/server_orchestrator.out.log
 user=root
 
 [program:hardware_orchestrator]
-command=/usr/bin/python3 $PROYECTO_DIR/hardware_orchestrator.py
+command=$PROYECTO_DIR/.venv/bin/python3 $PROYECTO_DIR/hardware_orchestrator.py
 directory=$PROYECTO_DIR
 autostart=true
 autorestart=true
@@ -100,15 +113,17 @@ stdout_logfile=/var/log/hardware_orchestrator.out.log
 user=root
 EOT
 
-# 8. Levantar los servicios en la Raspberry Pi
+# 7. Levantar los servicios en la Raspberry Pi
 echo "-----------------------------------------------------"
 echo "🚀 6/6 Lanzando servicios y orquestadores independientes..."
+systemctl enable supervisor
+systemctl start supervisor
 supervisorctl reread
 supervisorctl update
 supervisorctl restart all
 
 echo "====================================================="
-echo "✅ ¡PROVISIONAMIENTO COMPLETO CON MODO KIOSCO!"
-echo "📍 Tu pantalla HDMI se actualizará automáticamente al reiniciar."
-echo "🤖 Para aplicar los cambios gráficos por completo, ejecuta: sudo reboot"
+echo "✅ ¡PROVISIONAMIENTO CON VENV COMPLETADO!"
+echo "📍 Directorio: $PROYECTO_DIR"
+echo "🖥️  Para aplicar cambios de pantalla por completo, ejecuta: sudo reboot"
 echo "====================================================="
