@@ -5,11 +5,11 @@ import os
 import requests
 from pyzbar.pyzbar import decode
 from requests.auth import HTTPBasicAuth
-# RPi.GPIO se reemplaza internamente por la emulación de rpi-lgpio
 import RPi.GPIO as GPIO 
 
 class HardwareOrchestrator:
     def __init__(self, config_name="config.json"):
+        # Calcular ruta absoluta de forma dinámica
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(base_dir, config_name)
         
@@ -23,20 +23,17 @@ class HardwareOrchestrator:
             self.config = json.load(f)
 
     def setup_gpio(self):
-        # En rpi-lgpio / Trixie, setmode suele venir preconfigurado en BCM de forma nativa
         try:
             GPIO.setmode(GPIO.BCM)
         except Exception:
-            pass # Si la emulación lo maneja directo, ignoramos la advertencia
+            pass
             
         entradas = self.config["GPIO_PINS"]["ENTRADAS"]
         salidas = self.config["GPIO_PINS"]["SALIDAS"]
         
-        # Configurar Entradas (PUD_DOWN se emula correctamente en chips modernos)
         for pin in entradas.values():
             GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
             
-        # Configurar Salidas
         for pin in salidas.values():
             GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 
@@ -89,7 +86,6 @@ class HardwareOrchestrator:
         try:
             auth = HTTPBasicAuth(self.config["PI_USERNAME"], self.config["PI_PASSWORD"])
             payload = {"qr_token": qr_token, "device_id": "pi_acceso_01"}
-            
             response = requests.post(self.config["SERVER_URL"], json=payload, auth=auth, timeout=5)
             if response.status_code == 200:
                 return True, response.json().get("nombre", "Usuario")
@@ -105,7 +101,7 @@ class HardwareOrchestrator:
             pass
 
     def run(self):
-        print("[ORQUESTADOR HARDWARE] Ejecutándose en Trixie de forma independiente...")
+        print("[ORQUESTADOR HARDWARE] Esperando activación del sensor de proximidad...")
         ultimo_qr = None
         entradas = self.config["GPIO_PINS"]["ENTRADAS"]
         
@@ -123,7 +119,6 @@ class HardwareOrchestrator:
                         contenido_qr = qr.data.decode("utf-8")
                         if contenido_qr != ultimo_qr:
                             ultimo_qr = contenido_qr
-                            
                             exito, nombre_usuario = self.consultar_servidor_central(contenido_qr)
                             if exito:
                                 self.notificar_pantalla_local("success", nombre_usuario)
@@ -131,7 +126,6 @@ class HardwareOrchestrator:
                             else:
                                 self.notificar_pantalla_local("denied")
                                 self.encender_led_error()
-                                
                             ultimo_qr = None
                 time.sleep(0.1)
         finally:
