@@ -8,7 +8,7 @@ from requests.auth import HTTPBasicAuth
 import RPi.GPIO as GPIO 
 
 class HardwareOrchestrator:
-    def __init__(self, config_name="config.json"):
+    def __init__(self, config_name="setup/config.json"):
         # Calcular ruta absoluta de forma dinámica
         base_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(base_dir, config_name)

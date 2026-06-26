@@ -15,10 +15,11 @@ echo "================================================================="
 echo "📦 [1/7] Actualizando repositorios e instalando paquetes del sistema..."
 sudo apt-get update
 
-# Dependencias para Python, compilación, GPIO, Webcams y decodificación de QR (ZBar)
+# Dependencias para Python, compilación, GPIO, Webcams, ZBar y Servidor Gráfico Ligero
 sudo apt-get install -y python3-pip python3-venv python3-dev \
                         build-essential libzbar0 supervisor \
-                        xserver-xorg xinit x11-xserver-utils unclutter chromium lightdm
+                        xserver-xorg xinit x11-xserver-utils unclutter chromium lightdm \
+                        libgl1-mesa-glx libglib2.0-0
 
 # 2. Crear y configurar el Entorno Virtual (venv) aislado
 echo "🐍 [2/7] Configurando entorno virtual aislado (.venv)..."
@@ -90,13 +91,14 @@ sudo tee /etc/X11/Xwrapper.config > /dev/null << 'EOF'
 allowed_users=anybody
 EOF
 
-# 6. Configurar Supervisor para Orquestador de Hardware y Servidor FastAPI
+# 6. Configurar Supervisor para Orquestador de Hardware y Servidor FastAPI Corregido
 echo "🤖 [6/7] Configurando Supervisor para procesos en segundo plano..."
 sudo tee /etc/supervisor/conf.d/lector_qr.conf > /dev/null << EOF
 [program:web_server]
-command=$PROJECT_DIR/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+command=$PROJECT_DIR/.venv/bin/uvicorn server_orchestrator:app --host 0.0.0.0 --port 8000
 directory=$PROJECT_DIR
 user=$CURRENT_USER
+environment=PYTHONPATH="$PROJECT_DIR",PATH="$PROJECT_DIR/.venv/bin:%(ENV_PATH)s"
 autostart=true
 autorestart=true
 stderr_logfile=/var/log/web_server.err.log
