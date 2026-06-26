@@ -19,7 +19,7 @@ sudo apt-get update
 sudo apt-get install -y python3-pip python3-venv python3-dev \
                         build-essential libzbar0 supervisor \
                         xserver-xorg xinit x11-xserver-utils unclutter chromium lightdm \
-                        libgl1-mesa-glx libglib2.0-0
+                        libgl1 libglib2.0-0
 
 # 2. Crear y configurar el Entorno Virtual (venv) aislado
 echo "🐍 [2/7] Configurando entorno virtual aislado (.venv)..."
