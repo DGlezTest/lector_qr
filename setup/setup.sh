@@ -1,131 +1,142 @@
 #!/bin/bash
 
-# 1. Asegurar que el script se ejecute como ROOT (necesario para configurar servicios)
-if [ "$EUID" -ne 0 ]; then
-  echo "❌ Por favor, ejecuta este script usando sudo: sudo ./setup.sh"
-  exit 1
+# Terminar inmediatamente si algún comando falla
+set -e
+
+PROJECT_DIR="/home/pi/lector_qr"
+USER_HOME="/home/pi"
+CURRENT_USER="pi"
+
+echo "================================================================="
+echo "   INICIANDO INSTALACIÓN MAESTRA: LECTOR QR & KIOSCO INDUSTRIAL  "
+echo "================================================================="
+
+# 1. Actualizar el sistema e instalar dependencias nativas de Linux
+echo "📦 [1/7] Actualizando repositorios e instalando paquetes del sistema..."
+sudo apt-get update
+
+# Dependencias para Python, compilación, GPIO, Webcams y decodificación de QR (ZBar)
+sudo apt-get install -y python3-pip python3-venv python3-dev \
+                        build-essential libzbar0 supervisor \
+                        xserver-xorg xinit x11-xserver-utils unclutter chromium lightdm
+
+# 2. Crear y configurar el Entorno Virtual (venv) aislado
+echo "🐍 [2/7] Configurando entorno virtual aislado (.venv)..."
+cd "$PROJECT_DIR"
+
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
 fi
 
-echo "====================================================="
-echo "⚙️  CONFIGURACIÓN AUTOMÁTICA COMPLETA PARA TRIXIE ⚙️"
-echo "====================================================="
+# Activar venv de forma segura para instalar pip packs
+source .venv/bin/activate
 
-# Obtener rutas absolutas dinámicas
-SETUP_DIR=$(dirname "$(readlink -f "$0")")
-PROYECTO_DIR=$(dirname "$SETUP_DIR")
+echo "📥 Instalando librerías de Python dentro del entorno aislado..."
+pip install --upgrade pip
+pip install fastapi uvicorn[standard] opencv-python-headless pyzbar RPi.GPIO requests
 
-# 2. Actualizar e instalar dependencias del sistema operativo
-echo "📦 1/6 Instalando dependencias base del sistema..."
-apt-get update -y
+deactivate
+echo "✅ Entorno virtual de Python preparado con éxito."
 
-echo "📥 Instalando Supervisor, SWIG, Python venv y librerías nativas GPIO..."
-apt-get install -y supervisor python3-pip python3-dev python3-venv swig liblgpio-dev liblgpio1 -y
-
-echo "📥 Instalando entorno de ventanas y herramientas gráficas..."
-apt-get install -y xserver-xorg xinit x11-xserver-utils unclutter chromium-browser -y
-
-echo "📥 Instalando decodificador de QR nativo..."
-apt-get install -y libzbar0t64 || apt-get install -y libzbar0
-
-# 3. Mover el config.json a la raíz si no existe
-echo "-----------------------------------------------------"
-echo "⚙️  2/6 Desplegando archivo de configuración config.json..."
-if [ ! -f "$PROYECTO_DIR/config.json" ]; then
-    if [ -f "$SETUP_DIR/config.json" ]; then
-        cp "$SETUP_DIR/config.json" "$PROYECTO_DIR/config.json"
-        echo "📄 Plantilla config.json copiada a la raíz con éxito."
-    else
-        echo "❌ Error crítico: No se encontró config.json en $SETUP_DIR"
-        exit 1
-    fi
-else
-    echo "ℹ️  Ya existe un archivo config.json en la raíz. No se sobrescribió."
-fi
-
-# 4. CREACIÓN DEL VENV E INSTALACIÓN DE DEPENDENCIAS
-echo "-----------------------------------------------------"
-echo "🐍 3/6 Creando Entorno Virtual (venv) en la raíz del proyecto..."
-
-if [ ! -d "$PROYECTO_DIR/.venv" ]; then
-    python3 -m venv "$PROYECTO_DIR/.venv"
-    echo "✅ Entorno virtual creado con éxito."
-fi
-
-echo "📥 Instalando librerías desde requirements.txt dentro del venv..."
-"$PROYECTO_DIR/.venv/bin/pip" install --upgrade pip
-"$PROYECTO_DIR/.venv/bin/pip" install -r "$SETUP_DIR/requirements.txt"
-
-# 5. CONFIGURACIÓN DEL MODO KIOSCO PANTALLA LOCAL
-echo "-----------------------------------------------------"
-echo "🖥️  4/6 Configurando arranque en Modo Kiosco..."
-if [ -f "$SETUP_DIR/kiosco.sh.template" ]; then
-    cp "$SETUP_DIR/kiosco.sh.template" "$PROYECTO_DIR/kiosco.sh"
-    chmod +x "$PROYECTO_DIR/kiosco.sh"
-else
-    cat <<EOT > "$PROYECTO_DIR/kiosco.sh"
+# 3. Crear el script definitivo de Kiosco (kiosco.sh)
+echo "🌐 [3/7] Generando script de arranque para Chromium en modo Kiosco..."
+cat << 'EOF' > "$PROJECT_DIR/kiosco.sh"
 #!/bin/bash
-xset s off
-xset s noblank
-xset -dpms
-unclutter -idle 0.5 -root &
-chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:8000
-EOT
-    chmod +x "$PROYECTO_DIR/kiosco.sh"
+
+# Desactivar protectores de pantalla e hibernación de hardware X11
+xset s off 2>/dev/null
+xset s noblank 2>/dev/null
+xset -dpms 2>/dev/null
+
+echo "🌐 Lanzando Chromium en modo Kiosco..."
+exec chromium --window-size=1920,1080 \
+              --window-position=0,0 \
+              --kiosk \
+              --noerrdialogs \
+              --disable-infobars \
+              --check-for-update-interval=31536000 \
+              --disable-pinch \
+              http://localhost:8000
+EOF
+
+# Dar permisos de ejecución a los scripts
+chmod +x "$PROJECT_DIR/kiosco.sh"
+if [ -f "$PROJECT_DIR/hardware_orchestrator.py" ]; then
+    chmod +x "$PROJECT_DIR/hardware_orchestrator.py"
 fi
 
-cat <<EOT > /root/.xinitrc
-exec $PROYECTO_DIR/kiosco.sh
-EOT
+# 4. Configurar el inicio automático en Consola con Login Automático (Bypass de contraseña)
+echo "🖥️ [4/7] Configurando Autologin en consola pura (Evitando escritorio pesado)..."
+sudo systemctl set-default multi-user.target
+sudo systemctl disable lightdm
 
-if ! grep -q "startx" /root/.bashrc; then
-    cat <<EOT >> /root/.bashrc
+# Sobrescribir el getty de la terminal física 1 para inyectar al usuario pi de inmediato
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+sudo tee /etc/systemd/system/getty@tty1.service.d/autologin.conf > /dev/null << 'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+EOF
 
-# Lanzar el modo kiosco automáticamente al iniciar sesión en la terminal física 1
-if [ -z "\$DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
-    startx
-fi
-EOT
-fi
+sudo systemctl daemon-reload
 
-# 6. NUEVO: REGISTRO DINÁMICO EN SUPERVISOR APUNTANDO A LAS RUTAS CORREGIDAS
-echo "-----------------------------------------------------"
-echo "📋 5/6 Escribiendo configuración de Supervisor de forma automática..."
+# 5. Permisos de Hardware Gráfico para el usuario 'pi' (Solución al loop de render)
+echo "🔑 [5/7] Asignando permisos de GPU, renderizado y envoltura X11..."
+sudo usermod -a -G video,render,input "$CURRENT_USER"
+sudo chmod +s /usr/bin/Xorg
 
-mkdir -p /etc/supervisor/conf.d/
+# Permitir que startx sea invocado por cualquiera desde la consola tty
+sudo tee /etc/X11/Xwrapper.config > /dev/null << 'EOF'
+allowed_users=anybody
+EOF
 
-cat <<EOT > /etc/supervisor/conf.d/mi_escaner.conf
-[program:server_orchestrator]
-command=$PROYECTO_DIR/.venv/bin/python3 $PROYECTO_DIR/server_orchestrator.py
-directory=$PROYECTO_DIR
+# 6. Configurar Supervisor para Orquestador de Hardware y Servidor FastAPI
+echo "🤖 [6/7] Configurando Supervisor para procesos en segundo plano..."
+sudo tee /etc/supervisor/conf.d/lector_qr.conf > /dev/null << EOF
+[program:web_server]
+command=$PROJECT_DIR/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+directory=$PROJECT_DIR
+user=$CURRENT_USER
 autostart=true
 autorestart=true
-stderr_logfile=/var/log/server_orchestrator.err.log
-stdout_logfile=/var/log/server_orchestrator.out.log
-user=root
+stderr_logfile=/var/log/web_server.err.log
+stdout_logfile=/var/log/web_server.out.log
 
 [program:hardware_orchestrator]
-command=$PROYECTO_DIR/.venv/bin/python3 $PROYECTO_DIR/hardware_orchestrator.py
-directory=$PROYECTO_DIR
+command=$PROJECT_DIR/.venv/bin/python3 hardware_orchestrator.py
+directory=$PROJECT_DIR
+user=root
 autostart=true
 autorestart=true
 stderr_logfile=/var/log/hardware_orchestrator.err.log
 stdout_logfile=/var/log/hardware_orchestrator.out.log
-user=root
-EOT
+EOF
 
-echo "✅ Configuración de Supervisor inyectada en /etc/supervisor/conf.d/mi_escaner.conf"
+# Forzar a Supervisor a leer la nueva configuración y levantar hilos
+sudo supervisorctl reread
+sudo supervisorctl update
 
-# 7. Habilitar, arrancar y sincronizar Supervisorctl
-echo "-----------------------------------------------------"
-echo "🚀 6/6 Lanzando servicios y orquestadores independientes..."
-systemctl enable supervisor
-systemctl start supervisor
-supervisorctl reread
-supervisorctl update
-supervisorctl restart all
+# 7. Inyectar disparador gráfico de Kiosco Minimalista en .bashrc
+echo "🚀 [7/7] Inyectando disparador startx en el archivo .bashrc..."
+if ! grep -q "startx $PROJECT_DIR/kiosco.sh" "$USER_HOME/.bashrc"; then
+    cat << EOF >> "$USER_HOME/.bashrc"
 
-echo "====================================================="
-echo "✅ ¡PROVISIONAMIENTO Y SERVICIOS CONFIGURADOS CON ÉXITO!"
-echo "📍 Directorio raíz: $PROYECTO_DIR"
-echo "🖥️  Para ver la pantalla en modo Kiosco, ejecuta: sudo reboot"
-echo "====================================================="
+# Lanzar el modo kiosco dinámico directo desde la terminal física 1 (HDMI)
+if [ -z "\$DISPLAY" ] && [ "\$(tty)" = "/dev/tty1" ]; then
+    echo "🚀 Levantando entorno gráfico optimizado para el Kiosco..."
+    sleep 2
+    startx $PROJECT_DIR/kiosco.sh -- -nocursor
+    
+    echo "⚠️ El entorno gráfico se detuvo. Presiona Ctrl+C para interactuar."
+    read -r
+fi
+EOF
+fi
+
+echo "================================================================="
+echo " 🎉 ¡INSTALACIÓN COMPLETADA EXITOSAMENTE! "
+echo "================================================================="
+echo " Todo ha sido configurado bajo los estándares correctos para Debian Trixie."
+echo " Por favor, ejecuta el siguiente comando para reiniciar tu Raspberry Pi:"
+echo " -> sudo reboot"
+echo "================================================================="
