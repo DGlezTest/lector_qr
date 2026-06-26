@@ -38,8 +38,28 @@ class HardwareOrchestrator:
             GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 
     def setup_camera(self):
+        # 1. Extraer la subconfiguración de la cámara
         cam_conf = self.config["CAMERA"]
-        self.cap = cv2.VideoCapture(cam_conf["DEVICE_INDEX"])
+        
+        # 2. Definir dinámicamente el índice leyendo tu clave del JSON (asume "device_id" o "index")
+        # Si en tu JSON la clave está en mayúsculas (ej. "DEVICE_ID"), cámbialo aquí a "DEVICE_ID"
+        camera_idx = cam_conf.get("device_id", cam_conf.get("index", 0))
+        
+        # 3. Forzar el backend V4L2 nativo de Linux usando la variable local
+        # Intentar con el índice del JSON (ej. 0)
+        self.cap = cv2.VideoCapture(camera_idx, cv2.CAP_V4L2)
+
+        # Si no abre, forzar el índice 1 o autodetectar con -1
+        if not self.cap.isOpened():
+            print(f"[WARN] No se pudo abrir index {camera_idx}. Intentando con index 1...")
+            self.cap = cv2.VideoCapture(1, cv2.CAP_V4L2)
+
+        if not self.cap.isOpened():
+            print("[WARN] Intentando con autodetectar (-1)...")
+            self.cap = cv2.VideoCapture(-1, cv2.CAP_V4L2)
+        
+        # 4. Configurar el formato MJPEG para evitar que el buffer de frames se congele en Trixie
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_conf["WIDTH"])
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_conf["HEIGHT"])
 
@@ -101,39 +121,57 @@ class HardwareOrchestrator:
             pass
 
     def run(self):
-        print("[ORQUESTADOR HARDWARE] Esperando activación del sensor de proximidad...")
+        print("[ORQUESTADOR HARDWARE] 🚀 MODO DESARROLLO: Cámara permanentemente encendida...")
         ultimo_qr = None
-        entradas = self.config["GPIO_PINS"]["ENTRADAS"]
-        
+
         try:
             while True:
-                if GPIO.input(entradas["SENSOR_PROXIMIDAD"]) == GPIO.HIGH:
-                    ret, frame = self.cap.read()
-                    if not ret:
-                        continue
-                    
-                    frame = self.aplicar_giro_camara(frame)
-                    qr_codes = decode(frame)
-                    
-                    for qr in qr_codes:
-                        contenido_qr = qr.data.decode("utf-8")
-                        if contenido_qr != ultimo_qr:
-                            ultimo_qr = contenido_qr
-                            exito, nombre_usuario = self.consultar_servidor_central(contenido_qr)
-                            if exito:
-                                self.notificar_pantalla_local("success", nombre_usuario)
-                                self.secuenciar_puerta()
-                            else:
-                                self.notificar_pantalla_local("denied")
-                                self.encender_led_error()
-                            ultimo_qr = None
-                time.sleep(0.1)
+                # 1. Capturar frame directamente sin esperar sensor
+                ret, frame = self.cap.read()
+                if not ret:
+                    # Si falla un frame, duerme un instante y reintenta en la siguiente vuelta
+                    time.sleep(0.1)
+                    continue
+
+                # 2. Aplicar rotación configurada
+                frame = self.aplicar_giro_camara(frame)
+                
+                # 3. Convertir a escala de grises (Evita que PyZbar se congele en Debian Trixie)
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                
+                # 4. Buscar y decodificar códigos QR
+                qr_codes = decode(gray_frame)
+
+                for qr in qr_codes:
+                    contenido_qr = qr.data.decode("utf-8")
+                    if contenido_qr != ultimo_qr:
+                        print(f"[ORQUESTADOR] 🎯 ¡Código QR detectado!: {contenido_qr}")
+                        ultimo_qr = contenido_qr
+                        
+                        # Consultar al backend local
+                        exito, nombre_usuario = self.consultar_servidor_central(contenido_qr)
+                        if exito:
+                            print(f"[ORQUESTADOR] ✅ Acceso concedido a: {nombre_usuario}")
+                            self.notificar_pantalla_local("success", nombre_usuario)
+                            self.secuenciar_puerta()
+                        else:
+                            print("[ORQUESTADOR] ❌ Acceso denegado")
+                            self.notificar_pantalla_local("denied")
+                            self.encender_led_error()
+                            
+                        # Limpiar el caché del último QR para permitir lecturas consecutivas rápidas
+                        ultimo_qr = None
+                
+                # Pequeña pausa de control para no saturar la CPU (aprox. 30 FPS)
+                time.sleep(0.03)
+
         finally:
             try:
                 GPIO.cleanup()
             except Exception:
                 pass
             self.cap.release()
+            print("[ORQUESTADOR] Recursos de hardware liberados correctamente.")
 
 if __name__ == "__main__":
     orchestrator = HardwareOrchestrator()

@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Desactivar protectores de pantalla e hibernación de hardware X11
+xset s off 2>/dev/null
+xset s noblank 2>/dev/null
+xset -dpms 2>/dev/null
+
+echo "🌐 Lanzando Chromium en modo Kiosco..."
+exec chromium --window-size=1920,1080 \
+              --window-position=0,0 \
+              --kiosk \
+              --noerrdialogs \
+              --disable-infobars \
+              --check-for-update-interval=31536000 \
+              --disable-pinch \
+              http://localhost:8000
