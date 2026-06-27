@@ -15,26 +15,35 @@ echo "================================================================="
 echo "📦 [1/7] Actualizando repositorios e instalando paquetes del sistema..."
 sudo apt-get update
 
-# Dependencias para Python, compilación, GPIO, Webcams, ZBar y Servidor Gráfico Ligero
+# Se añade 'libcap-dev' para compilación de python-prctl.
+# Se añade 'libcamera-apps' para asegurar binarios de la cámara M2.
 sudo apt-get install -y python3-pip python3-venv python3-dev \
                         build-essential libzbar0 supervisor \
                         xserver-xorg xinit x11-xserver-utils unclutter chromium lightdm \
-                        libgl1 libglib2.0-0
+                        libgl1 libglib2.0-0 libcap-dev python3-libcamera libcamera-apps
 
-# 2. Crear y configurar el Entorno Virtual (venv) aislado
-echo "🐍 [2/7] Configurando entorno virtual aislado (.venv)..."
+# 2. Crear y configurar el Entorno Virtual (venv) heredando paquetes del sistema
+echo "🐍 [2/7] Configurando entorno virtual con acceso al sistema operativo (.venv)..."
 cd "$PROJECT_DIR"
 
+# IMPORTANTE: Se añade --system-site-packages para que el .venv pueda morder libcamera
 if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
+    python3 -m venv --system-site-packages .venv
+else
+    echo "⚙️ El entorno .venv ya existe. Asegurando herencia de paquetes del sistema..."
+    sed -i 's/include-system-site-packages = false/include-system-site-packages = true/g' .venv/pyvenv.cfg
 fi
 
 # Activar venv de forma segura para instalar pip packs
 source .venv/bin/activate
 
-echo "📥 Instalando librerías de Python dentro del entorno aislado..."
+echo "📥 Instalando librerías de Python dentro del entorno..."
 pip install --upgrade pip
 pip install fastapi uvicorn[standard] opencv-python-headless pyzbar RPi.GPIO requests
+
+# Instalación de picamera2 localmente dentro del entorno virtual
+echo "📸 Instalando picamera2 para soporte de cámara nativa M2..."
+pip install picamera2
 
 deactivate
 echo "✅ Entorno virtual de Python preparado con éxito."
@@ -105,6 +114,7 @@ stderr_logfile=/var/log/web_server.err.log
 stdout_logfile=/var/log/web_server.out.log
 
 [program:hardware_orchestrator]
+# Ejecutamos con la ruta absoluta del Python aislado de root para asegurar los bindings de hardware
 command=$PROJECT_DIR/.venv/bin/python3 hardware_orchestrator.py
 directory=$PROJECT_DIR
 user=root
