@@ -3,6 +3,7 @@
     "PI_USERNAME": "usuario_pi_01",
     "PI_PASSWORD": "password_temporal_o_recibido",
     "CAMERA": {
+        "TYPE": "raspberry_pi",
         "DEVICE_INDEX": 0,
         "WIDTH": 640,
         "HEIGHT": 480,

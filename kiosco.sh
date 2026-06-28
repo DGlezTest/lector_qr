@@ -1,6 +1,4 @@
 #!/bin/bash
-
-# Desactivar protectores de pantalla e hibernación de hardware X11
 xset s off 2>/dev/null
 xset s noblank 2>/dev/null
 xset -dpms 2>/dev/null
