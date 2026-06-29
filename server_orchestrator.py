@@ -1,7 +1,9 @@
 import os
 import sys
+from app.routers.api_v1 import router as api_router, set_websocket_manager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 
@@ -10,6 +12,9 @@ app = FastAPI(title="Orquestador de Interfaz Local")
 # Localizar la ruta absoluta
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+#servir archivos locales staticos (Tailwind CSS, JS, etc.)
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 # --- MODELOS DE DATOS ---
 class QRPayload(BaseModel):
@@ -43,6 +48,8 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+set_websocket_manager(manager)
+app.include_router(api_router)
 
 # --- ENDPOINTS HTTP ---
 @app.get("/")
@@ -52,27 +59,6 @@ async def get_index():
         with open(html_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h1>❌ Error: templates/index.html no encontrado</h1>", status_code=404)
-
-@app.post("/api/qr")
-async def recibir_evento_qr(qr: QRPayload):
-    print(f"[SERVER] 🎯 QR Recibido desde el Hardware: '{qr.data}'")
-    
-    # Mandamos el JSON directo al index.html mediante el WebSocket activo
-    await manager.send_json({
-        "status": "success",
-        "data": qr.data,
-        "source": qr.source_camera,
-        "nombre": "Acceso Autorizado"
-    })
-    return {"status": "processed", "target": "kiosk_display"}
-
-@app.post("/api/evento-local")
-async def recibir_evento_hardware(evento: EventoLocal):
-    await manager.send_json({
-        "status": evento.status,
-        "nombre": evento.nombre
-    })
-    return {"status": "notificado_a_pantalla"}
 
 # --- WEBSOCKET ---
 @app.websocket("/ws")

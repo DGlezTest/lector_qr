@@ -156,6 +156,20 @@ def ejecutar_secuencia_apertura():
             GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.HIGH)
         print("[🤖 AUTOMATIZACIÓN] 🔒 Ciclo finalizado. Esperando nuevo código.")
 
+def ejecutar_secuencia_rechazo():
+    """Parpadea el LED Rojo físico indicando acceso denegado en sincronía con la pantalla"""
+    print("[🤖 AUTOMATIZACIÓN] 🔒 Acceso Rechazado por el servidor. Manteniendo traba cerrada.")
+    if "LED_ESTADO_ROJO" in SALIDAS:
+        try:
+            # Simular un parpadeo rápido de advertencia en el gabinete del torniquete
+            for _ in range(3):
+                GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.LOW)
+                time.sleep(0.15)
+                GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.HIGH)
+                time.sleep(0.15)
+        except Exception as e:
+            print(f"[❌ AUTOMATIZACIÓN] Error al parpadear LED de rechazo: {e}")
+
 
 # --- BUCLE PRINCIPAL ---
 def main():
@@ -203,12 +217,25 @@ def main():
                     respuesta = requests.post(URL_SERVIDOR, json=payload, timeout=2)
                     
                     if respuesta.status_code == 200:
-                        print("[📤 RED] Servidor notificado con éxito. Iniciando relés.")
-                        ejecutar_secuencia_apertura()
+                        # 🔌 DECODIFICAMOS LA RESPUESTA DE NUESTRA NUEVA API
+                        datos_servidor = respuesta.json()
+                        accion = datos_servidor.get("action", "lock")
+                        mensaje = datos_servidor.get("message", "Sin mensaje")
+                        
+                        print(f"[📤 RED] API procesó trama correctamente. Decisión: {accion.upper()} ({mensaje})")
+                        
+                        # 🎛️ TOMAR ACCIÓN FÍSICA SEGÚN EL REGLAMENTO DEL ENRUTADOR
+                        if accion == "unlock":
+                            ejecutar_secuencia_apertura()
+                        else:
+                            ejecutar_secuencia_rechazo()
                     else:
                         print(f"[⚠️ RED] El servidor rechazó la trama. Código HTTP: {respuesta.status_code}")
+                        ejecutar_secuencia_rechazo()
+                        
                 except Exception as e:
                     print(f"[❌ RED] No hay comunicación con server_orchestrator: {e}")
+                    ejecutar_secuencia_rechazo()
 
             time.sleep(0.01)
 
