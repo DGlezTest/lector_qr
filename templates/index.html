@@ -1,162 +1,209 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es" translate="no">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control de acceso</title>
+    <meta name="google" content="notranslate">
+    <title>Torniquete — Metro CDMX</title>
+    <link rel="stylesheet" href="/static/css/tailwind.min.css">
     <style>
-        :root {
-            --bg--color: #121212;
-            --card--bg: #1e1e1e;
-            --text-main: #ffffff;
-            --text-muted: #aaaaaa;
-            --border-color: #333333;
-            --success-color: #1b5e20;
-            --error-color: #b71c1c;
-
+        :root{
+            --c-bg: #090d0e; /* Fondo oscuro industrial */
+            --c-orange: #ff7a1a;   
+            --c-green-metro: #00a651; 
+            --c-red: #ff3b4e;
+            --c-cyan: #2dd4ff;
         }
+        *{ font-family: 'Courier New', Courier, monospace; box-sizing: border-box; }
+        .font-display{ font-family: 'DejaVu Sans', 'Arial', sans-serif; font-weight: 800; }
 
+        /* Fondo optimizado para evitar manchas grises o destellos en pantallas LCD de 10" */
         body {
-            font-family: Arial, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg--color);
-            color: var(--text-main);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            min-height: 100vh;
-            box-sizing: border-box;
+            background-color: var(--c-bg) !important;
+            background: linear-gradient(180deg, #0f1416 0%, #050708 100%) !important;
         }
 
-        #container {
-            text-align: center;
-            transition: all 0.4s ease;
-            padding: 2rem;
-            border-radius: 20px;
-            background-color: var(--card--bg);
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            width: 100%;
-            max-width: 500px;
-            box-sizing: border-box;
-
+        /* Bloqueo total del Traductor de Google */
+        .goog-te-banner-frame, .goog-te-balloon-frame, #goog-gt-tt, .goog-te-balloon-wrapper {
+            display: none !important;
+            visibility: hidden !important;
         }
+        body { top: 0px !important; }
+        .skiptranslate { display: none !important; }
 
-        h1 {
-            margin-top: 0;
-            margin-bottom: 1.5rem;
-            font-size: 2rem;
-            word-wrap: break-word;
-        }
+        .vignette{ position: fixed; inset: 0; pointer-events: none; z-index: 5; background: radial-gradient(circle, transparent 60%, rgba(0,0,0,0.7) 100%); }
 
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            padding-bottom: 75%; /* 4:3 Aspect Ratio */
-            height: 0;
-            border-radius: 12px;
-            background-color: #000;
-            margin-bottom: 1.5rem;
-            overflow: hidden;
-        }
+        /* Semáforo superior */
+        .baliza{ width: 100%; height: 5px; background: rgba(255,255,255,0.05); position: relative; overflow: hidden; }
+        .baliza-fill{ position:absolute; inset:0; background: var(--c-cyan); box-shadow: 0 0 8px 1px var(--c-cyan); transition: background-color .2s; }
+        @keyframes baliza-idle{ 0%,100%{ opacity: 0.7; } 50%{ opacity: 1; } }
+        .baliza-fill.idle { animation: baliza-idle 1.6s infinite; }
+        @keyframes baliza-alert{ 0%,100%{ opacity: 1; } 50%{ opacity: 0.2; } }
+        .baliza-fill.alert { animation: baliza-alert 0.3s steps(1) infinite; }
 
-        #video-feed{
-            position: absolute;
-            top: 0;
-            left: 0;   
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
+        body.mode-success .baliza-fill{ background: var(--c-green-metro); box-shadow: 0 0 10px 2px var(--c-green-metro); }
+        body.mode-error .baliza-fill{ background: var(--c-red); box-shadow: 0 0 10px 2px var(--c-red); }
 
-        #status-message{
-            font-size: 1.3rem;
-            font-weight: bold;
-            color: var(--text-muted);
-            margin-top: 1rem;
-        }
+        /* Animación de flechas */
+        @keyframes avanza{ 0%{ transform: translateX(-3px); opacity: 0.2; } 50%{ opacity: 1; } 100%{ transform: translateX(3px); opacity: 0.2; } }
+        .flecha-paso{ animation: avanza 1.1s ease-in-out infinite; }
+        .flecha-paso:nth-child(2){ animation-delay: 0.15s; }
+        .flecha-paso:nth-child(3){ animation-delay: 0.3s; }
+        @keyframes equis-bloqueo{ 0%,100%{ opacity: 1; } 50%{ opacity: 0.3; } }
+        .equis-bloqueo{ animation: equis-bloqueo 0.5s infinite; }
 
+        /* Anillo del Lector */
+        .lector{ position: relative; width: 140px; height: 140px; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+        .lector-aro{ position: absolute; inset: 0; border-radius: 9999px; border: 2px solid rgba(45,212,255,0.35); animation: spin 16s linear infinite; }
+        .lector-aro-2{ position: absolute; inset: 8px; border-radius: 9999px; border: 1px dashed rgba(45,212,255,0.45); animation: spin-rev 9s linear infinite; }
+        @keyframes spin { to{ transform: rotate(360deg); } }
+        @keyframes spin-rev { to{ transform: rotate(-360deg); } }
 
+        body.mode-success .lector-aro, body.mode-success .lector-aro-2{ border-color: var(--c-green-metro); animation: none; }
+        body.mode-error .lector-aro, body.mode-error .lector-aro-2{ border-color: var(--c-red); }
 
-        /* Estados dinámicos de autenticación con transiciones suaves */
-        .success { background-color: var(--success-color) !important; }
-        .error { background-color: var(--error-color) !important; }
+        @keyframes sweep{ 0%{ top: 15%; opacity: 0; } 15%{ opacity: 1; } 85%{ opacity: 1; } 100%{ top: 85%; opacity: 0; } }
+        .scan-laser{ position: absolute; left: 15%; right: 15%; height: 2px; background: var(--c-cyan); box-shadow: 0 0 8px 1px var(--c-cyan); animation: sweep 1.9s infinite; }
 
-        /* ======================================================= */
-        /* MEDIA QUERIES: Adaptación para Tablets y Celulares       */
-        /* ======================================================= */
-        
-        /* Ajustes para pantallas medianas (Tablets) */
-        @media (max-width: 768px) {
-            #container {
-                max-width: 90%;
-                padding: 1.5rem;
-            }
-            h1 { font-size: 1.8rem; }
-            #status-message { font-size: 1.2rem; }
-        }
-
-        /* Ajustes para pantallas pequeñas (Celulares en vertical) */
-        @media (max-width: 480px) {
-            body { padding: 10px; }
-            #container {
-                max-width: 100%;
-                padding: 1.2rem;
-                border-radius: 15px;
-            }
-            h1 { font-size: 1.5rem; margin-bottom: 1rem; }
-            #status-message { font-size: 1.1rem; }
-        }
+        .status-dot{ width: 6px; height: 6px; border-radius: 9999px; background: var(--c-cyan); animation: blink 1.5s infinite; }
+        @keyframes blink{ 0%,100%{ opacity:1; } 50%{ opacity:0.4; } }
+        body.mode-success .status-dot{ background: var(--c-green-metro); }
+        body.mode-error .status-dot{ background: var(--c-red); }
     </style>
 </head>
-<body>
+<body id="pantalla" class="text-white h-screen w-screen flex flex-col justify-between select-none overflow-hidden p-6">
 
-    <div id="container">
-        <h1 id="title">Escanee su Código QR</h1>
-        
-        <div class="camera-container">
-            <img src="/video_feed" alt="Cámara en vivo" style="width: 100%; max-width: 640px; border-radius: 8px;" />
+    <div class="vignette"></div>
+
+    <header class="relative z-10 w-full">
+        <div class="flex items-center justify-between text-xs mb-2 opacity-90">
+            <div class="flex items-center gap-2">
+                <span id="status-dot" class="status-dot"></span>
+                <span class="font-display font-bold tracking-tight text-white">METROBÚS <span class="text-orange-400">CDMX</span></span>
+            </div>
+            <div class="tracking-widest text-[11px] text-white opacity-75">
+                <span id="reloj">00:00:00</span>
+            </div>
         </div>
+        <div class="baliza"><div id="baliza-fill" class="baliza-fill idle"></div></div>
+    </header>
+
+    <main class="relative z-10 flex-grow flex flex-col items-center justify-center text-center my-auto">
         
-        <div id="status-message">Esperando código...</div>
-    </div>
+        <div id="contenedor-icono" class="lector mb-4">
+            <div class="lector-aro"></div>
+            <div class="lector-aro-2"></div>
+            <div class="scan-laser" id="laser"></div>
+
+            <svg id="icono-qr" class="w-16 h-16 text-cyan-300 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+            </svg>
+            <svg id="icono-exito" class="hidden w-16 h-16 text-emerald-400 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            <svg id="icono-error" class="hidden w-16 h-16 text-red-400 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </div>
+
+        <p id="eyebrow" class="font-display text-xs font-semibold tracking-[0.3em] text-cyan-400 mb-2">ESPERANDO PAGO</p>
+
+        <h1 id="texto-principal" class="font-display text-3xl font-extrabold tracking-tight max-w-xl px-2 text-white">
+            Acerca tu tarjeta o código
+        </h1>
+
+        <p id="texto-secundario" class="text-sm mt-2 text-white opacity-60 max-w-sm px-2">
+            Mantén el paso libre para los demás pasajeros
+        </p>
+
+        <div id="indicador-paso" class="flex items-center justify-center mt-5 h-6">
+            <svg id="flechas" width="65" height="22" viewBox="0 0 90 32" fill="none">
+                <path class="flecha-paso" d="M2 16h14m0 0l-5-6m5 6l-5 6" stroke="#2dd4ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path class="flecha-paso" d="M32 16h14m0 0l-5-6m5 6l-5 6" stroke="#2dd4ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path class="flecha-paso" d="M62 16h14m0 0l-5-6m5 6l-5 6" stroke="#2dd4ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+    </main>
+
+    <footer class="relative z-10 w-full text-center py-2.5 bg-black/40 border border-white/[0.08] rounded-md text-[9px] tracking-[0.2em] text-white opacity-40">
+        RED DE TRANSPORTE CDMX · TORNIQUETE INTELIGENTE NG
+    </footer>
 
     <script>
-        // Conexión dinámica al WebSocket del server local
-        const wsToken = new WebSocket(`ws://${window.location.host}/ws`);
-        
-        const container = document.getElementById('container');
-        const titleElement = document.getElementById('title');
-        const statusElement = document.getElementById('status-message');
+        const pantalla = document.getElementById('pantalla');
+        const iconoQr = document.getElementById('icono-qr');
+        const iconoExito = document.getElementById('icono-exito');
+        const iconoError = document.getElementById('icono-error');
+        const laser = document.getElementById('laser');
+        const textoPrincipal = document.getElementById('texto-principal');
+        const textoSecundario = document.getElementById('texto-secundario');
+        const eyebrow = document.getElementById('eyebrow');
+        const balizaFill = document.getElementById('baliza-fill');
+        const contenedorIcono = document.getElementById('contenedor-icono');
+        const flechas = document.getElementById('flechas');
+        const relojEl = document.getElementById('reloj');
+        const statusDot = document.getElementById('status-dot');
 
-        wsToken.onmessage = function(event) {
-            const respuesta = JSON.parse(event.data);
-            
-            if (respuesta.status === "success") {
-                container.classList.add('success');
-                titleElement.innerText = `¡Bienvenido, ${respuesta.nombre}!`;
-                statusElement.innerText = "Acceso Permitido ✅";
-                reiniciarPantalla(4000);
-            } 
-            else if (respuesta.status === "denied") {
-                container.classList.add('error');
-                titleElement.innerText = "Acceso Denegado";
-                statusElement.innerText = "Código QR Inválido o Expirado ❌";
-                reiniciarPantalla(3000);
-            }
-        };
+        function tickReloj(){
+            const ahora = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            relojEl.textContent = `${pad(ahora.getHours())}:${pad(ahora.getMinutes())}:${pad(ahora.getSeconds())}`;
+        }
+        tickReloj(); setInterval(tickReloj, 1000);
 
-        function reiniciarPantalla(tiempo) {
-            setTimeout(() => {
-                container.classList.remove('success', 'error');
-                titleElement.innerText = "Escanee su Código QR";
-                statusElement.innerText = "Esperando código...";
-            }, tiempo);
+        function irAEstadoReposo() {
+            pantalla.className = "text-white h-screen w-screen flex flex-col justify-between select-none overflow-hidden p-6";
+            iconoQr.classList.remove('hidden'); iconoExito.classList.add('hidden'); iconoError.classList.add('hidden'); laser.classList.remove('hidden');
+            balizaFill.className = "baliza-fill idle";
+            flechas.innerHTML = `
+                <path class="flecha-paso" d="M2 16h14m0 0l-5-6m5 6l-5 6" stroke="#2dd4ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path class="flecha-paso" d="M32 16h14m0 0l-5-6m5 6l-5 6" stroke="#2dd4ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                <path class="flecha-paso" d="M62 16h14m0 0l-5-6m5 6l-5 6" stroke="#2dd4ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+            eyebrow.textContent = "ESPERANDO PAGO";
+            eyebrow.className = "font-display text-xs font-semibold tracking-[0.3em] text-cyan-400 mb-2";
+            textoPrincipal.innerText = "Acerca tu tarjeta o código";
+            textoPrincipal.className = "font-display text-3xl font-extrabold tracking-tight max-w-xl px-2 text-white";
+            textoSecundario.innerText = "Mantén el paso libre para los demás pasajeros";
+            textoSecundario.className = "text-sm mt-2 text-white opacity-60 max-w-sm px-2";
         }
 
-        wsToken.onclose = () => {
-            statusElement.innerText = "⚠️ Desconectado del servidor local.";
-            statusElement.style.color = "#ffdd00";
-        };
+        function mostrarExito(nombreUsuario) {
+            pantalla.className = "text-white h-screen w-screen flex flex-col justify-between select-none overflow-hidden p-6 mode-success";
+            iconoQr.classList.add('hidden'); iconoError.classList.add('hidden'); laser.classList.add('hidden'); iconoExito.classList.remove('hidden');
+            balizaFill.className = "baliza-fill";
+            flechas.innerHTML = `<path d="M15 16h50m0 0l-10-10m10 10l-10 10" stroke="#00a651" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+            eyebrow.textContent = "PAGO ACEPTADO · PASA";
+            eyebrow.className = "font-display text-xs font-semibold tracking-[0.3em] text-emerald-400 mb-2";
+            textoPrincipal.innerText = "Acceso autorizado";
+            textoPrincipal.className = "font-display text-4xl font-extrabold tracking-tight max-w-xl px-2 text-emerald-400";
+            textoSecundario.innerHTML = `Bienvenido(a), <span class="text-emerald-200 font-semibold">${nombreUsuario}</span>`;
+            textoSecundario.className = "text-base mt-2 text-white opacity-80 max-w-sm px-2";
+            setTimeout(irAEstadoReposo, 4000);
+        }
+
+        function mostrarError(motivo) {
+            pantalla.className = "text-white h-screen w-screen flex flex-col justify-between select-none overflow-hidden p-6 mode-error";
+            iconoQr.classList.add('hidden'); iconoExito.classList.add('hidden'); laser.classList.add('hidden'); iconoError.classList.remove('hidden');
+            balizaFill.className = "baliza-fill alert";
+            flechas.innerHTML = `<path class="equis-bloqueo" d="M30 8l30 16M60 8L30 24" stroke="#ff3b4e" stroke-width="4" stroke-linecap="round"/>`;
+            eyebrow.textContent = "PAGO RECHAZADO · BLOQUEADO";
+            eyebrow.className = "font-display text-xs font-semibold tracking-[0.3em] text-red-400 mb-2";
+            textoPrincipal.innerText = "Acceso denegado";
+            textoPrincipal.className = "font-display text-4xl font-extrabold tracking-tight max-w-xl px-2 text-red-400";
+            textoSecundario.innerText = motivo;
+            textoSecundario.className = "text-base mt-2 text-white opacity-80 max-w-sm px-2";
+            setTimeout(irAEstadoReposo, 2500);
+        }
+
+        function conectarWebSocket() {
+            const socket = new WebSocket(`ws://${window.location.host}/ws`);
+            socket.onopen = () => { statusDot.style.background = "var(--c-cyan)"; };
+            socket.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.status === "success") mostrarExito(d.nombre || "Asistente");
+                    else mostrarError(d.nombre || "Inválido");
+                } catch (err) {}
+            };
+            socket.onclose = () => { statusDot.style.background = "var(--c-orange)"; setTimeout(conectarWebSocket, 2000); };
+        }
+        conectarWebSocket();
     </script>
 </body>
 </html>
