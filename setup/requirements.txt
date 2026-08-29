@@ -6,3 +6,4 @@ pyzbar>=0.1.8
 requests>=2.31.0
 httpx>=0.24.1
 rpi-lgpio>=0.6
+smbus2>=0.4.3

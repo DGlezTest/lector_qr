@@ -1,259 +1,213 @@
-#!/usr/bin/env python3
 import os
 import sys
-import json
 import time
-import cv2
+import json
+import threading
 import requests
+import cv2
 from pyzbar.pyzbar import decode
-import RPi.GPIO as GPIO
+from smbus2 import SMBus
 
-# --- CONFIGURACIÓN DE RUTAS Y CONSTANTES ---
+# --- 1. CARGA DE CONFIGURACIÓN ---
 CONFIG_PATH = "/home/pi/lector_qr/setup/config.json"
-URL_SERVIDOR = "http://localhost:8000/api/qr"  # Servidor local FastAPI
+if not os.path.exists(CONFIG_PATH):
+    CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup", "config.json")
 
 print(f"[ORQUESTADOR] 📂 Abriendo configuración desde: {CONFIG_PATH}")
 
-# --- LEER CONFIGURACIÓN DEL JSON ---
 try:
-    with open(CONFIG_PATH, "r") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         config = json.load(f)
-    
-    # Extraer la configuración de la cámara (Soporta mayúsculas y minúsculas)
-    config_lowercase = {k.lower(): v for k, v in config.items()}
-    camera_config = config_lowercase.get("camera", {})
-    camera_config_lowercase = {k.lower(): v for k, v in camera_config.items()}
-    
-    # Capturar el tipo exacto de cámara
-    TIPO_CAMARA = camera_config_lowercase.get("type", "webcam").lower().strip()
-    
-    # Extraer GPIOs mapeando los diccionarios internos
-    gpio_config = config_lowercase.get("gpio_pins", {})
-    gpio_config_lowercase = {k.lower(): v for k, v in gpio_config.items()}
-    
-    # Mantener soporte si tus claves internas están en mayúsculas ("ENTRADAS", "SALIDAS")
-    entradas_raw = gpio_config_lowercase.get("entradas", {})
-    ENTRADAS = {k.upper(): v for k, v in entradas_raw.items()}
-    
-    salidas_raw = gpio_config_lowercase.get("salidas", {})
-    SALIDAS = {k.upper(): v for k, v in salidas_raw.items()}
-    
-    # Tiempos de automatización de relés
-    tiempos_raw = config_lowercase.get("tiempos_puerta", {})
-    TIEMPOS = {k.upper(): v for k, v in tiempos_raw.items()}
 
-    print(f"[✅ CONFIG] Archivo JSON cargado correctamente.")
-    print(f"[ORQUESTADOR HARDWARE] 🚀 Modo de cámara seleccionado: {TIPO_CAMARA.upper()}")
+    # Configuración de Cámara
+    cam_cfg = config.get("camera", config.get("CAMERA", {}))
+    TIPO_CAMARA = cam_cfg.get("type", cam_cfg.get("TYPE", "webcam")).lower().strip()
+    DEVICE_INDEX = int(cam_cfg.get("device_index", cam_cfg.get("DEVICE_INDEX", 0)))
+    CAM_WIDTH = int(cam_cfg.get("width", cam_cfg.get("WIDTH", 640)))
+    CAM_HEIGHT = int(cam_cfg.get("height", cam_cfg.get("HEIGHT", 480)))
+
+    # Configuración I2C (HAT 52Pi EP-0099)
+    i2c_cfg = config.get("i2c", config.get("I2C", {}))
+    I2C_BUS_NUM = int(i2c_cfg.get("bus", i2c_cfg.get("BUS", 1)))
+    raw_addr = i2c_cfg.get("device_address", i2c_cfg.get("DEVICE_ADDRESS", "0x10"))
+    I2C_ADDR = int(raw_addr, 16) if isinstance(raw_addr, str) else int(raw_addr)
+
+    # Canales de Relé
+    reles_cfg = config.get("rele_canales", config.get("RELE_CANALES", {}))
+    CANAL_ABRIR = int(reles_cfg.get("rele_abrir_motor", reles_cfg.get("RELE_ABRIR_MOTOR", 1)))
+    CANAL_CERRAR = int(reles_cfg.get("rele_cerrar_motor", reles_cfg.get("RELE_CERRAR_MOTOR", 2)))
+
+    # Tiempos de maniobra
+    tiempos_cfg = config.get("tiempos", config.get("TIEMPOS", {}))
+    TIEMPO_APERTURA = float(tiempos_cfg.get("tiempo_apertura_motor", tiempos_cfg.get("TIEMPO_APERTURA_MOTOR", 2.5)))
+    TIEMPO_ESPERA = float(tiempos_cfg.get("tiempo_espera_peaton", tiempos_cfg.get("TIEMPO_ESPERA_PEATON", 5.0)))
+    TIEMPO_CIERRE = float(tiempos_cfg.get("tiempo_cierre_motor", tiempos_cfg.get("TIEMPO_CIERRE_MOTOR", 2.5)))
+
+    print("[✅ CONFIG] Archivo JSON cargado correctamente.")
+    print(f"[ORQUESTADOR HARDWARE] 🚀 Modo cámara: {TIPO_CAMARA.upper()} | HAT I2C: {hex(I2C_ADDR)} (Bus {I2C_BUS_NUM})")
+    print(f"[ORQUESTADOR HARDWARE] 🔌 Relé Abrir: Ch {CANAL_ABRIR} ({TIEMPO_APERTURA}s) | Relé Cerrar: Ch {CANAL_CERRAR} ({TIEMPO_CIERRE}s)")
 
 except Exception as e:
-    print(f"[❌ CONFIG ERROR] Hubo un problema al parsear el JSON: {e}")
-    print("[⚠️ FALLBACK] Usando 'webcam' por seguridad general.")
-    TIPO_CAMARA = "webcam"
+    print(f"[❌ CONFIG ERROR] Error al parsear JSON: {e}")
+    sys.exit(1)
 
-
-# --- IMPORTACIÓN CONDICIONAL DE PICAMERA2 ---
-if TIPO_CAMARA == "raspberry_pi":
-    try:
-        from picamera2 import Picamera2
-        print("[📸 HARDWARE] Librería Picamera2 importada con éxito desde el sistema.")
-    except ImportError as e:
-        print(f"[❌ COMPILACIÓN] Se configuró 'raspberry_pi' pero Picamera2 no está instalada: {e}")
-        sys.exit(1)
-
-
-# --- FUNCIONES DE CONTROL DE VIDEO ---
-def inicializar_camara_pi():
-    """Inicia el flujo de captura nativo para sensores CSI M2"""
-    try:
-        picam2 = Picamera2()
-        picam2.configure(picam2.create_preview_configuration(main={"size": (640, 480)}))
-        picam2.start()
-        print("[📸 HARDWARE] Sensor nativo de Raspberry Pi M2 inicializado.")
-        return picam2
-    except Exception as e:
-        print(f"[❌ HARDWARE] Error físico crítico en cámara del Pi: {e}")
-        sys.exit(1)
-
-def capturar_frame_pi(picam2):
-    frame_rgb = picam2.capture_array()
-    frame_gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
-    return frame_gray
-
-def inicializar_webcam():
-    """Inicia el flujo de captura para webcams USB genéricas"""
-    try:
-        idx = camera_config.get("DEVICE_INDEX", 0) if isinstance(camera_config, dict) else 0
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if not cap.isOpened():
-            raise RuntimeError("No se detecta dispositivo USB en /dev/video")
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        print("[📸 HARDWARE] Puerto de Webcam USB inicializado.")
-        return cap
-    except Exception as e:
-        print(f"[❌ HARDWARE] Error físico crítico en Webcam USB: {e}")
-        sys.exit(1)
-
-def capturar_frame_webcam(cap):
-    ret, frame_bgr = cap.read()
-    if not ret:
-        return None
-    frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    return frame_gray
-
-
-# --- CONTROL DE PERIFÉRICOS ELECTRONICOS (GPIO) ---
-def inicializar_gpios():
-    """Configura el mapeo inicial de relés, sensores y LEDs"""
-    print("[⚙️ GPIO] Configurando pines digitales en la placa...")
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
-    
-    # Mapear Entradas
-    for nombre, pin in ENTRADAS.items():
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        print(f"  📥 Entrada -> {nombre}: Pin BCM {pin}")
-        
-    # Mapear Salidas
-    for nombre, pin in SALIDAS.items():
-        GPIO.setup(pin, GPIO.OUT)
-        GPIO.output(pin, GPIO.LOW)
-        print(f"  📤 Salida  -> {nombre}: Pin BCM {pin}")
-
-def ejecutar_secuencia_apertura():
-    """Ejecuta la automatización física de la compuerta"""
-    print("[🤖 AUTOMATIZACIÓN] 🔓 Ejecutando secuencia de apertura autorizada...")
-    try:
-        # 1. Indicadores visuales iniciales
-        if "LED_ESTADO_VERDE" in SALIDAS and "LED_ESTADO_ROJO" in SALIDAS:
-            GPIO.output(SALIDAS["LED_ESTADO_VERDE"], GPIO.HIGH)
-            GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.LOW)
-        
-        # 2. Accionar Motor de Apertura
-        if "RELAY_ABRIR_MOTOR" in SALIDAS:
-            print("  🔁 Activando relé de apertura del motor...")
-            GPIO.output(SALIDAS["RELAY_ABRIR_MOTOR"], GPIO.HIGH)
-            time.sleep(TIEMPOS.get("TIEMPO_APERTURA_MOTOR", 2.5))
-            GPIO.output(SALIDAS["RELAY_ABRIR_MOTOR"], GPIO.LOW)
-        
-        # 3. Retraso peatonal seguro
-        print("  🕒 Esperando cruce seguro del usuario...")
-        time.sleep(TIEMPOS.get("TIEMPO_ESPERA_PEATON", 5.0))
-        
-        # 4. Accionar Motor de Cierre
-        if "RELAY_CERRAR_MOTOR" in SALIDAS:
-            print("  🔁 Activando relé de cierre del motor...")
-            GPIO.output(SALIDAS["RELAY_CERRAR_MOTOR"], GPIO.HIGH)
-            time.sleep(TIEMPOS.get("TIEMPO_CIERRE_MOTOR", 2.5))
-            GPIO.output(SALIDAS["RELAY_CERRAR_MOTOR"], GPIO.LOW)
-            
-    except Exception as e:
-        print(f"[❌ AUTOMATIZACIÓN] Error al conmutar relés: {e}")
-    finally:
-        # 5. Volver al estado de reposo (Espera de códigos)
-        if "LED_ESTADO_VERDE" in SALIDAS and "LED_ESTADO_ROJO" in SALIDAS:
-            GPIO.output(SALIDAS["LED_ESTADO_VERDE"], GPIO.LOW)
-            GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.HIGH)
-        print("[🤖 AUTOMATIZACIÓN] 🔒 Ciclo finalizado. Esperando nuevo código.")
-
-def ejecutar_secuencia_rechazo():
-    """Parpadea el LED Rojo físico indicando acceso denegado en sincronía con la pantalla"""
-    print("[🤖 AUTOMATIZACIÓN] 🔒 Acceso Rechazado por el servidor. Manteniendo traba cerrada.")
-    if "LED_ESTADO_ROJO" in SALIDAS:
+# --- 2. CONTROLADOR FÍSICO I2C (52Pi EP-0099) ---
+class RelayController:
+    def __init__(self, bus_num=1, address=0x10):
+        self.bus_num = bus_num
+        self.address = address
         try:
-            # Simular un parpadeo rápido de advertencia en el gabinete del torniquete
-            for _ in range(3):
-                GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.LOW)
-                time.sleep(0.15)
-                GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.HIGH)
-                time.sleep(0.15)
+            self.bus = SMBus(self.bus_num)
+            self.all_off()
+            print(f"[🔌 I2C] Conexión establecida con HAT en {hex(self.address)}")
         except Exception as e:
-            print(f"[❌ AUTOMATIZACIÓN] Error al parpadear LED de rechazo: {e}")
+            print(f"[❌ I2C ERROR] No se pudo inicializar bus I2C: {e}")
+            self.bus = None
 
+    def on(self, channel: int):
+        if self.bus:
+            try:
+                self.bus.write_byte_data(self.address, channel, 0xFF)
+            except Exception as e:
+                print(f"[❌ I2C ERROR] Fallo al activar canal {channel}: {e}")
 
-# --- BUCLE PRINCIPAL ---
-def main():
-    inicializar_gpios()
-    
-    # Encender LED Rojo inicial si existe en el cableado
-    if "LED_ESTADO_ROJO" in SALIDAS:
-        GPIO.output(SALIDAS["LED_ESTADO_ROJO"], GPIO.HIGH)
+    def off(self, channel: int):
+        if self.bus:
+            try:
+                self.bus.write_byte_data(self.address, channel, 0x00)
+            except Exception as e:
+                print(f"[❌ I2C ERROR] Fallo al apagar canal {channel}: {e}")
 
-    # Iniciar la cámara correspondiente
-    camara_objeto = inicializar_camara_pi() if TIPO_CAMARA == "raspberry_pi" else inicializar_webcam()
+    def all_off(self):
+        if self.bus:
+            for ch in range(1, 5):
+                try:
+                    self.bus.write_byte_data(self.address, ch, 0x00)
+                except Exception:
+                    pass
 
-    print("[ORQUESTADOR] 🎯 Sistema de monitoreo activo. Coloque un código QR...")
-    
-    ultimo_codigo = ""
-    tiempo_bloqueo = 0
+relay = RelayController(I2C_BUS_NUM, I2C_ADDR)
+
+# Control de ejecución y anti-rebote
+bloqueo_motor = False
+ultimo_qr_leido = ""
+tiempo_ultimo_qr = 0
+
+def secuencia_apertura_motor(nombre: str):
+    global bloqueo_motor
+    bloqueo_motor = True
+    print(f"\n[🤖 AUTOMATIZACIÓN] 🔓 Iniciando secuencia de apertura para: {nombre}")
+
+    try:
+        # 1. Pulso de Apertura
+        print(f"[🤖 AUTOMATIZACIÓN] ⚡ Activando Relé {CANAL_ABRIR} (Apertura) por {TIEMPO_APERTURA}s...")
+        relay.on(CANAL_ABRIR)
+        time.sleep(TIEMPO_APERTURA)
+        relay.off(CANAL_ABRIR)
+        print(f"[🤖 AUTOMATIZACIÓN] 🛑 Relé {CANAL_ABRIR} apagado.")
+
+        # 2. Tiempo de paso peatonal
+        print(f"[🤖 AUTOMATIZACIÓN] 🕒 Esperando cruce de usuario ({TIEMPO_ESPERA}s)...")
+        time.sleep(TIEMPO_ESPERA)
+
+        # 3. Pulso de Cierre
+        print(f"[🤖 AUTOMATIZACIÓN] ⚡ Activando Relé {CANAL_CERRAR} (Cierre) por {TIEMPO_CIERRE}s...")
+        relay.on(CANAL_CERRAR)
+        time.sleep(TIEMPO_CIERRE)
+        relay.off(CANAL_CERRAR)
+        print(f"[🤖 AUTOMATIZACIÓN] 🛑 Relé {CANAL_CERRAR} apagado.")
+
+    except Exception as e:
+        print(f"[❌ ERROR MOTOR] Error en ciclo de relés: {e}")
+    finally:
+        relay.all_off()
+        bloqueo_motor = False
+        print("[🤖 AUTOMATIZACIÓN] 🔒 Ciclo finalizado. Relés en reposo.\n")
+
+# --- 3. PROCESAMIENTO Y COMUNICACIÓN CON FASTAPI ---
+SERVER_API_URL = "http://localhost:8000/api/qr"
+
+def enviar_qr_a_servidor(qr_data: str):
+    global ultimo_qr_leido, tiempo_ultimo_qr
+
+    # Anti-rebote: evitar procesar el mismo código si pasan menos de 4 segundos
+    ahora = time.time()
+    if qr_data == ultimo_qr_leido and (ahora - tiempo_ultimo_qr) < 4.0:
+        return
+
+    if bloqueo_motor:
+        print(f"[⚠️ HARDWARE] QR detectado ({qr_data}), pero el mecanismo está en movimiento. Ignorando.")
+        return
+
+    ultimo_qr_leido = qr_data
+    tiempo_ultimo_qr = ahora
+
+    print(f"\n[🎯 HARDWARE] QR Detectado en lector: {qr_data}")
+
+    payload = {
+        "data": qr_data,
+        "source_camera": TIPO_CAMARA
+    }
+
+    try:
+        response = requests.post(SERVER_API_URL, json=payload, timeout=2.5)
+        if response.status_code == 200:
+            res_json = response.json()
+            accion = res_json.get("action", "").lower()
+            nombre = res_json.get("name", res_json.get("nombre", "Usuario"))
+
+            print(f"[📤 RED] API procesó trama. Decisión: {accion.upper()} ({res_json.get('message', '')})")
+
+            if accion == "unlock":
+                # Ejecutar relés en un hilo separado para no congelar la captura de video
+                hilo_motor = threading.Thread(target=secuencia_apertura_motor, args=(nombre,), daemon=True)
+                hilo_motor.start()
+            else:
+                print("[🤖 AUTOMATIZACIÓN] 🔒 Acceso Rechazado por el servidor. Manteniendo relés apagados.")
+        else:
+            print(f"[⚠️ RED] El servidor respondió con código HTTP: {response.status_code}")
+
+    except Exception as e:
+        print(f"[❌ RED] No hay comunicación con server_orchestrator: {e}")
+
+# --- 4. BUCLE DE CAPTURA DE CÁMARA (OPENCV / V4L2) ---
+def iniciar_captura_webcam():
+    print(f"[📸 HARDWARE] Inicializando cámara en /dev/video{DEVICE_INDEX} con backend V4L2...")
+    cap = cv2.VideoCapture(DEVICE_INDEX, cv2.CAP_V4L2)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+    time.sleep(1.0)
+
+    if not cap.isOpened():
+        print(f"[❌ HARDWARE] No se pudo abrir /dev/video{DEVICE_INDEX}")
+        return
+
+    print("[ORQUESTADOR] 🎯 Sistema de monitoreo activo. Coloque un código QR...\n")
 
     try:
         while True:
-            # 1. Adquirir frame en escala de grises
-            frame_gray = capturar_frame_pi(camara_objeto) if TIPO_CAMARA == "raspberry_pi" else capturar_frame_webcam(camara_objeto)
-
-            if frame_gray is None:
+            ret, frame = cap.read()
+            if not ret or frame is None:
                 time.sleep(0.01)
                 continue
 
-            # 2. Buscar códigos QR utilizando el motor PyZbar
-            codigos = decode(frame_gray)
-            
-            for qr in codigos:
-                contenido = qr.data.decode('utf-8').strip()
-                ahora = time.time()
-                
-                # Control anti-rebote (Evita ráfagas repetidas en el mismo segundo)
-                if contenido == ultimo_codigo and (ahora - tiempo_bloqueo) < 3.0:
-                    continue
-                
-                print(f"\n[🎯 HARDWARE] QR Detectado en lector: {contenido}")
-                ultimo_codigo = contenido
-                tiempo_bloqueo = ahora
+            # Decodificar códigos QR en el cuadro actual
+            codigos = decode(frame)
+            for codigo in codigos:
+                datos = codigo.data.decode('utf-8').strip()
+                if datos:
+                    enviar_qr_a_servidor(datos)
 
-                # 3. Enviar el paquete de datos al servidor web local
-                try:
-                    payload = {"data": contenido, "source_camera": TIPO_CAMARA}
-                    respuesta = requests.post(URL_SERVIDOR, json=payload, timeout=2)
-                    
-                    if respuesta.status_code == 200:
-                        # 🔌 DECODIFICAMOS LA RESPUESTA DE NUESTRA NUEVA API
-                        datos_servidor = respuesta.json()
-                        accion = datos_servidor.get("action", "lock")
-                        mensaje = datos_servidor.get("message", "Sin mensaje")
-                        
-                        print(f"[📤 RED] API procesó trama correctamente. Decisión: {accion.upper()} ({mensaje})")
-                        
-                        # 🎛️ TOMAR ACCIÓN FÍSICA SEGÚN EL REGLAMENTO DEL ENRUTADOR
-                        if accion == "unlock":
-                            ejecutar_secuencia_apertura()
-                        else:
-                            ejecutar_secuencia_rechazo()
-                    else:
-                        print(f"[⚠️ RED] El servidor rechazó la trama. Código HTTP: {respuesta.status_code}")
-                        ejecutar_secuencia_rechazo()
-                        
-                except Exception as e:
-                    print(f"[❌ RED] No hay comunicación con server_orchestrator: {e}")
-                    ejecutar_secuencia_rechazo()
-
-            time.sleep(0.01)
+            time.sleep(0.03)
 
     except KeyboardInterrupt:
-        print("\n[ORQUESTADOR] Cierre manual solicitado.")
+        print("\n[🛑] Deteniendo orquestador de hardware...")
     finally:
-        print("[ORQUESTADOR] Liberando periféricos...")
-        if TIPO_CAMARA == "raspberry_pi" and camara_objeto:
-            camara_objeto.stop()
-            camara_objeto.close()
-        elif TIPO_CAMARA == "webcam" and camara_objeto:
-            camara_objeto.release()
-            
-        try:
-            GPIO.cleanup()
-        except:
-            pass
-        print("[ORQUESTADOR] 👋 Entorno limpio. Hilo finalizado.")
+        cap.release()
+        relay.all_off()
 
 if __name__ == "__main__":
-    main()
+    iniciar_captura_webcam()

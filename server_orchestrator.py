@@ -1,54 +1,60 @@
 import os
 import sys
-from app.routers.api_v1 import router as api_router, set_websocket_manager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from app.routers.api_v1 import router as api_router, set_websocket_manager
+
 app = FastAPI(title="Orquestador de Interfaz Local")
+
+# CORS para evitar bloqueos en frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Localizar la ruta absoluta
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-#servir archivos locales staticos (Tailwind CSS, JS, etc.)
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
-
-# --- MODELOS DE DATOS ---
-class QRPayload(BaseModel):
-    data: str
-    source_camera: str
-
-class EventoLocal(BaseModel):
-    status: str
-    nombre: str = ""
+# Servir archivos estáticos si la carpeta existe
+if os.path.exists(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # --- GESTOR DE CONEXIONES WEBSOCKET ---
 class ConnectionManager:
     def __init__(self):
-        self.active_connections = []
-        
+        self.active_connections: list[WebSocket] = []
+
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
         print(f"[WEBSOCKET] Kiosco conectado. Activas: {len(self.active_connections)}")
-        
+
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         print(f"[WEBSOCKET] Kiosco desconectado. Activas: {len(self.active_connections)}")
-        
-    async def send_json(self, message: dict):
-        for connection in self.active_connections:
+
+    async def broadcast(self, message: dict):
+        """Envía el evento a todas las pantallas conectadas"""
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
             except Exception:
-                pass
+                self.disconnect(connection)
 
 manager = ConnectionManager()
 set_websocket_manager(manager)
+
+# Incluir las rutas de la API
 app.include_router(api_router)
 
 # --- ENDPOINTS HTTP ---
