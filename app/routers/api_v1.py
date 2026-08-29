@@ -50,12 +50,19 @@ async def recibir_qr(payload: QRPayload):
             nombre_invitado = contenido
 
     # Notificar a la pantalla mediante broadcast
+    # Notificar a la pantalla mediante broadcast
     if ws_manager_global:
-        await ws_manager_global.broadcast({
+        payload_ws = {
             "status": "success",
             "nombre": nombre_invitado,
-            "message": "Disfruta el 26 Aniversario · Por favor pase adelante"
-        })
+            "name": nombre_invitado,
+            "user": nombre_invitado,
+            "invitado": nombre_invitado,
+            "message": "Disfruta el 26 Aniversario. Por favor pase adelante"
+        }
+        await ws_manager_global.broadcast(payload_ws)
+           
+        
 
     # Responder al hardware_orchestrator para accionar los relés I2C
     return {
