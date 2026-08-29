@@ -1,26 +1,21 @@
 {
-  "SERVER_URL": "https://tu-servidor-central.com/api/v1/auth-qr",
-  "PI_USERNAME": "usuario_pi_01",
-  "PI_PASSWORD": "password_temporal_o_recibido",
-  "CAMERA": {
-    "TYPE": "webcam",
-    "DEVICE_INDEX": 0,
-    "WIDTH": 640,
-    "HEIGHT": 480,
-    "FLIP_VERTICAL": false,
-    "FLIP_HORIZONTAL": false
+  "camera": {
+    "type": "webcam",
+    "device_index": 0,
+    "width": 640,
+    "height": 480
   },
-  "I2C": {
-    "BUS": 1,
-    "DEVICE_ADDRESS": "0x13"
+  "i2c": {
+    "bus": 1,
+    "device_address": "0x13"
   },
-  "RELE_CANALES": {
-    "RELE_ABRIR_MOTOR": 1,
-    "RELE_CERRAR_MOTOR": 2
+  "rele_canales": {
+    "rele_abrir_motor": 1,
+    "rele_cerrar_motor": 2
   },
-  "TIEMPOS": {
-    "TIEMPO_APERTURA_MOTOR": 2.5,
-    "TIEMPO_ESPERA_PEATON": 5.0,
-    "TIEMPO_CIERRE_MOTOR": 2.5
+  "tiempos": {
+    "tiempo_apertura_motor": 2.5,
+    "tiempo_espera_peaton": 5.0,
+    "tiempo_cierre_motor": 2.5
   }
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# 1. Detectar rutas y usuario
+# 1. Detectar la raíz real del proyecto
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "$SCRIPT_DIR" == */setup ]]; then
     PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -18,22 +18,23 @@ echo "📂 Raíz del proyecto: $PROJECT_DIR"
 echo "👤 Usuario destino:   $CURRENT_USER ($USER_HOME)"
 echo "================================================================="
 
-# 2. Actualizar sistema e instalar librerías nativas
+# 2. Actualizar el sistema e instalar dependencias nativas
 echo "📦 [1/7] Actualizando repositorios e instalando paquetes del sistema..."
 sudo apt-get update
 sudo apt-get install -y python3-pip python3-venv python3-dev \
                         build-essential libzbar0 supervisor sqlite3 \
                         xserver-xorg xinit x11-xserver-utils unclutter chromium lightdm \
                         libgl1 libglib2.0-0 libcap-dev python3-libcamera libcamera-apps \
-                        i2c-tools python3-smbus xdotool sed
+                        i2c-tools python3-smbus xdotool sed gawk
 
-# 3. Habilitar I2C en Kernel, Módulos y Firmware
-echo "🔌 [2/7] Habilitando y forzando carga de módulos I2C..."
+# 3. Habilitar y forzar carga de módulos I2C
+echo "🔌 [2/7] Habilitando bus I2C en Kernel, módulos y arranque..."
 sudo raspi-config nonint do_i2c 0 2>/dev/null || true
 sudo modprobe i2c-dev 2>/dev/null || true
 
 if ! grep -q "^i2c-dev" /etc/modules 2>/dev/null; then
     echo "i2c-dev" | sudo tee -a /etc/modules > /dev/null
+    echo "✅ Módulo i2c-dev agregado a /etc/modules"
 fi
 
 CONFIG_FILE="/boot/firmware/config.txt"
@@ -44,16 +45,25 @@ if ! grep -q "^dtparam=i2c_arm=on" "$CONFIG_FILE" 2>/dev/null; then
     echo "✅ Parámetro dtparam=i2c_arm=on agregado a $CONFIG_FILE"
 fi
 
-# 4. Auto-detección en vivo de la dirección del HAT I2C
-echo "🔍 [3/7] Escaneando bus I2C para auto-configuración..."
-DETECTED_ADDR=$(i2cdetect -y 1 2>/dev/null | grep -E "^(00|10|20|30|40|50|60|70):" | grep -oE "\b[0-9a-f]{2}\b" | head -n 1 || true)
+# 4. Auto-detección I2C
+echo "🔍 [3/7] Escaneando bus I2C para autoconfiguración del HAT..."
+DETECTED_ADDR=$(i2cdetect -y 1 2>/dev/null | awk '
+    NR > 1 {
+        for (i = 2; i <= NF; i++) {
+            if ($i != "--" && $i != "" && $i != "00") {
+                print $i;
+                exit;
+            }
+        }
+    }
+')
 
 if [ -n "$DETECTED_ADDR" ]; then
     I2C_HEX="0x$DETECTED_ADDR"
     echo "🎯 HAT I2C detectado con éxito en: $I2C_HEX"
 else
     I2C_HEX="0x13"
-    echo "⚠️ No se detectó dirección en vivo (puede requerir reinicio). Usando: $I2C_HEX"
+    echo "⚠️ No se detectó dirección activa en vivo. Asignando fallback seguro: $I2C_HEX"
 fi
 
 mkdir -p "$PROJECT_DIR/setup"
@@ -84,7 +94,7 @@ cat << EOF > "$CONFIG_PATH"
 EOF
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$PROJECT_DIR/setup"
 
-# 5. Configurar el Entorno Virtual (venv) en la raíz
+# 5. Configurar el Entorno Virtual (venv)
 echo "🐍 [4/7] Configurando entorno virtual integrado en $PROJECT_DIR/.venv..."
 cd "$PROJECT_DIR"
 

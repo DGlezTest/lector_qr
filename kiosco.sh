@@ -3,7 +3,6 @@ xset s off 2>/dev/null
 xset s noblank 2>/dev/null
 xset -dpms 2>/dev/null
 
-echo "🌐 Lanzando Chromium en modo Kiosco..."
 exec chromium --window-size=1920,1080 \
               --window-position=0,0 \
               --kiosk \
