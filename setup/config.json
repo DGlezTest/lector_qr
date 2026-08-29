@@ -12,7 +12,7 @@
   },
   "I2C": {
     "BUS": 1,
-    "DEVICE_ADDRESS": "0x10"
+    "DEVICE_ADDRESS": "0x13"
   },
   "RELE_CANALES": {
     "RELE_ABRIR_MOTOR": 1,
