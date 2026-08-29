@@ -88,41 +88,56 @@ class RelayController:
 
 relay = RelayController(I2C_BUS_NUM, I2C_ADDR)
 
-# Control de ejecución y anti-rebote
+# Variables de control de estado del motor y anti-rebote
 bloqueo_motor = False
 ultimo_qr_leido = ""
 tiempo_ultimo_qr = 0
 
 def secuencia_apertura_motor(nombre: str):
+    """Secuencia ejecutada para registrar una ENTRADA"""
     global bloqueo_motor
     bloqueo_motor = True
-    print(f"\n[🤖 AUTOMATIZACIÓN] 🔓 Iniciando secuencia de apertura para: {nombre}")
+    print(f"\n[🤖 AUTOMATIZACIÓN] 🔓 Iniciando secuencia de ENTRADA para: {nombre}")
 
     try:
-        # 1. Pulso de Apertura
         print(f"[🤖 AUTOMATIZACIÓN] ⚡ Activando Relé {CANAL_ABRIR} (Apertura) por {TIEMPO_APERTURA}s...")
         relay.on(CANAL_ABRIR)
         time.sleep(TIEMPO_APERTURA)
         relay.off(CANAL_ABRIR)
         print(f"[🤖 AUTOMATIZACIÓN] 🛑 Relé {CANAL_ABRIR} apagado.")
 
-        # 2. Tiempo de paso peatonal
-        print(f"[🤖 AUTOMATIZACIÓN] 🕒 Esperando cruce de usuario ({TIEMPO_ESPERA}s)...")
+        print(f"[🤖 AUTOMATIZACIÓN] 🕒 Tiempo de cruce ({TIEMPO_ESPERA}s)...")
         time.sleep(TIEMPO_ESPERA)
 
-        # 3. Pulso de Cierre
-        print(f"[🤖 AUTOMATIZACIÓN] ⚡ Activando Relé {CANAL_CERRAR} (Cierre) por {TIEMPO_CIERRE}s...")
+    except Exception as e:
+        print(f"[❌ ERROR MOTOR] Error en ciclo de apertura: {e}")
+    finally:
+        relay.all_off()
+        bloqueo_motor = False
+        print("[🤖 AUTOMATIZACIÓN] 🔒 Ciclo de entrada finalizado. Relés en reposo.\n")
+
+def secuencia_cierre_motor(nombre: str):
+    """Secuencia ejecutada para registrar una SALIDA"""
+    global bloqueo_motor
+    bloqueo_motor = True
+    print(f"\n[🤖 AUTOMATIZACIÓN] 🚪 Iniciando secuencia de SALIDA para: {nombre}")
+
+    try:
+        print(f"[🤖 AUTOMATIZACIÓN] ⚡ Activando Relé {CANAL_CERRAR} (Cierre/Salida) por {TIEMPO_CIERRE}s...")
         relay.on(CANAL_CERRAR)
         time.sleep(TIEMPO_CIERRE)
         relay.off(CANAL_CERRAR)
         print(f"[🤖 AUTOMATIZACIÓN] 🛑 Relé {CANAL_CERRAR} apagado.")
 
+        print(f"[🤖 AUTOMATIZACIÓN] 🕒 Tiempo de cruce ({TIEMPO_ESPERA}s)...")
+        time.sleep(TIEMPO_ESPERA)
+
     except Exception as e:
-        print(f"[❌ ERROR MOTOR] Error en ciclo de relés: {e}")
+        print(f"[❌ ERROR MOTOR] Error en ciclo de cierre: {e}")
     finally:
         relay.all_off()
         bloqueo_motor = False
-        print("[🤖 AUTOMATIZACIÓN] 🔒 Ciclo finalizado. Relés en reposo.\n")
+        print("[🤖 AUTOMATIZACIÓN] 🔒 Ciclo de salida finalizado. Relés en reposo.\n")
 
 # --- 3. PROCESAMIENTO Y COMUNICACIÓN CON FASTAPI ---
 SERVER_API_URL = "http://localhost:8000/api/qr"
@@ -130,8 +145,8 @@ SERVER_API_URL = "http://localhost:8000/api/qr"
 def enviar_qr_a_servidor(qr_data: str):
     global ultimo_qr_leido, tiempo_ultimo_qr
 
-    # Anti-rebote: evitar procesar el mismo código si pasan menos de 4 segundos
     ahora = time.time()
+    # Anti-rebote: Evitar lecturas duplicadas continuas en menos de 4 segundos
     if qr_data == ultimo_qr_leido and (ahora - tiempo_ultimo_qr) < 4.0:
         return
 
@@ -155,12 +170,14 @@ def enviar_qr_a_servidor(qr_data: str):
             res_json = response.json()
             accion = res_json.get("action", "").lower()
             nombre = res_json.get("name", res_json.get("nombre", "Usuario"))
+            movimiento = res_json.get("movimiento", "ENTRADA").upper()
 
-            print(f"[📤 RED] API procesó trama. Decisión: {accion.upper()} ({res_json.get('message', '')})")
+            print(f"[📤 RED] API procesó trama. Decisión: {accion.upper()} | Tipo: {movimiento} ({res_json.get('message', '')})")
 
             if accion == "unlock":
-                # Ejecutar relés en un hilo separado para no congelar la captura de video
-                hilo_motor = threading.Thread(target=secuencia_apertura_motor, args=(nombre,), daemon=True)
+                # Seleccionar la rutina según el estado devuelto por SQLite
+                target_func = secuencia_apertura_motor if movimiento == "ENTRADA" else secuencia_cierre_motor
+                hilo_motor = threading.Thread(target=target_func, args=(nombre,), daemon=True)
                 hilo_motor.start()
             else:
                 print("[🤖 AUTOMATIZACIÓN] 🔒 Acceso Rechazado por el servidor. Manteniendo relés apagados.")
@@ -194,7 +211,6 @@ def iniciar_captura_webcam():
                 time.sleep(0.01)
                 continue
 
-            # Decodificar códigos QR en el cuadro actual
             codigos = decode(frame)
             for codigo in codigos:
                 datos = codigo.data.decode('utf-8').strip()
@@ -211,3 +227,4 @@ def iniciar_captura_webcam():
 
 if __name__ == "__main__":
     iniciar_captura_webcam()
+
