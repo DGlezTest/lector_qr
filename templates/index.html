@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
     <title>Tele Urban — 26 Aniversario</title>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -14,6 +14,7 @@
             --text-green: #78c41d;
             --red: #ff3b4e;
             --bg: #050e12;
+            --blue-zone: #00d2ff;
         }
         html, body {
             width: 100%;
@@ -86,6 +87,40 @@
             flex-direction: column;
         }
         
+        /* ═══ INDICADOR DE CÁMARA SUPERIOR REFORZADO ═══ */
+        .cam-indicator {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: none;
+        }
+        .cam-arrow {
+            width: 48px;
+            height: 48px;
+            color: #ffffff;
+            filter: drop-shadow(0 0 10px var(--green)) drop-shadow(0 0 20px rgba(57,255,20,0.9));
+            animation: arrowUp 1.1s ease-in-out infinite;
+        }
+        @keyframes arrowUp {
+            0%, 100% { transform: translateY(0); opacity: 1; }
+            50% { transform: translateY(-10px); opacity: 0.45; }
+        }
+        .cam-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+            color: #ffffff;
+            text-shadow: 0 0 10px rgba(57,255,20,0.8), 0 2px 4px rgba(0,0,0,0.9);
+            margin-top: 2px;
+        }
+
         .baliza {
             height: 5px;
             background: rgba(255,255,255,.06);
@@ -131,7 +166,7 @@
             align-items: center;
             justify-content: center;
             gap: 80px;
-            margin: 55px 0;
+            margin: 35px 0;
             width: 100%;
         }
         .side-col {
@@ -165,14 +200,6 @@
             line-height: 1;
             margin-top: 12px;
         }
-        .logo-tagline {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 20px;
-            letter-spacing: .2em;
-            color: rgba(255,255,255,.35);
-            text-transform: uppercase;
-            margin-top: 5px;
-        }
         .aniv-num {
             font-family: 'Bebas Neue', sans-serif;
             font-size: 120px;
@@ -192,27 +219,31 @@
             margin-top: 4px;
         }
 
-        .esp-top { margin-bottom: 10px; }
+        /* Textos bajados para despejar el área del lector superior */
+        .esp-top { 
+            margin-top: 75px; 
+            margin-bottom: 5px; 
+        }
         .esp-ey {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 20px;
+            font-size: 22px;
             letter-spacing: .32em;
             text-transform: uppercase;
             color: var(--text-green);
-            text-shadow: 0 0 12px rgba(120,196,29,.4);
+            text-shadow: 0 0 14px rgba(120,196,29,.5);
         }
         .esp-ti {
             font-family: 'Bebas Neue', sans-serif;
-            font-size: clamp(30px, 5vw, 50px);
+            font-size: clamp(34px, 5.5vw, 56px);
             letter-spacing: .06em;
             line-height: 1;
             color: white;
-            margin-top: 6px;
+            margin-top: 8px;
         }
         .esp-sb {
-            font-size: 20px;
+            font-size: 22px;
             color: var(--text-green);
-            margin-top: 6px;
+            margin-top: 8px;
             letter-spacing: .03em;
         }
         
@@ -223,7 +254,7 @@
             background: rgba(255,255,255,.07);
             overflow: hidden;
             position: relative;
-            margin-top: 16px;
+            margin-top: 10px;
         }
         @keyframes pg {
             0% { left: 0; width: 0; }
@@ -244,6 +275,7 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
+            margin-top: 45px;
         }
         #estado-exito.visible { display: flex; }
         @keyframes pop {
@@ -252,18 +284,18 @@
             100% { transform: scale(1) rotate(0); opacity: 1; }
         }
         .check-circle {
-            width: 100px;
-            height: 100px;
+            width: 96px;
+            height: 96px;
             border-radius: 50%;
-            border: 3px solid var(--green);
-            box-shadow: 0 0 22px 6px rgba(57,255,20,.55), inset 0 0 18px rgba(57,255,20,.2);
+            border: 3.5px solid var(--green);
+            box-shadow: 0 0 26px 8px rgba(57,255,20,.6), inset 0 0 20px rgba(57,255,20,.25);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 18px;
+            margin-bottom: 16px;
             animation: pop .5s cubic-bezier(.34,1.56,.64,1) both;
         }
-        .check-circle svg { color: var(--green); filter: drop-shadow(0 0 8px rgba(57,255,20,.85)); }
+        .check-circle svg { color: var(--green); filter: drop-shadow(0 0 10px rgba(57,255,20,.9)); }
         
         @keyframes su {
             0% { transform: translateY(16px); opacity: 0; }
@@ -274,39 +306,74 @@
         .su3 { animation: su .5s ease-out .26s both; }
         .su4 { animation: su .5s ease-out .36s both; }
         
+        /* Etiquetas de acceso agrandadas */
         .ex-ey {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-            letter-spacing: .32em;
+            font-size: 18px;
+            letter-spacing: .35em;
             text-transform: uppercase;
             color: var(--text-green);
-            text-shadow: 0 0 12px rgba(120,196,29,.5);
-            margin-bottom: 4px;
+            text-shadow: 0 0 14px rgba(120,196,29,.6);
+            margin-bottom: 6px;
+            font-weight: 700;
         }
         .ex-bv {
             font-family: 'Bebas Neue', sans-serif;
-            font-size: clamp(58px, 12vw, 105px);
+            font-size: clamp(62px, 11vw, 105px);
             letter-spacing: .05em;
             line-height: 1;
             background: linear-gradient(115deg, var(--green) 0%, #c8d400 80%);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            filter: drop-shadow(0 0 24px rgba(57,255,20,.5));
+            filter: drop-shadow(0 0 24px rgba(57,255,20,.55));
         }
         .ex-nm {
             font-family: 'Sora', sans-serif;
             font-weight: 800;
-            font-size: clamp(22px, 5vw, 42px);
+            font-size: clamp(32px, 5.5vw, 52px);
             letter-spacing: -.01em;
             color: white;
             text-transform: uppercase;
+            margin-top: 6px;
+            text-shadow: 0 2px 14px rgba(0,0,0,0.8);
+        }
+
+        /* Zona en color azul agrandada */
+        .ex-zona-box {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 14px;
+            padding: 10px 30px;
+            border-radius: 12px;
+            background: rgba(0, 210, 255, 0.12);
+            border: 2px solid rgba(0, 210, 255, 0.5);
+            box-shadow: 0 0 26px rgba(0, 210, 255, 0.3), inset 0 0 14px rgba(0, 210, 255, 0.15);
+        }
+        .ex-zona-lbl {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            letter-spacing: .28em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.75);
+            font-weight: 700;
+        }
+        .ex-zona-val {
+            font-family: 'Sora', sans-serif;
+            font-weight: 800;
+            font-size: clamp(26px, 4vw, 36px);
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            color: var(--blue-zone);
+            text-shadow: 0 0 18px rgba(0, 210, 255, 0.85);
             margin-top: 4px;
         }
+
         .ex-sb {
-            font-size: 12px;
-            color: rgba(255,255,255,.42);
-            margin-top: 8px;
+            font-size: 17px;
+            color: rgba(255,255,255,.65);
+            margin-top: 12px;
             letter-spacing: .05em;
         }
         
@@ -315,6 +382,7 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
+            margin-top: 45px;
         }
         #estado-error.visible { display: flex; }
         @keyframes shk {
@@ -323,38 +391,39 @@
             66% { transform: translateX(8px); }
         }
         .x-circle {
-            width: 100px;
-            height: 100px;
+            width: 96px;
+            height: 96px;
             border-radius: 50%;
-            border: 3px solid var(--red);
-            box-shadow: 0 0 22px 6px rgba(255,59,78,.55), inset 0 0 18px rgba(255,59,78,.2);
+            border: 3.5px solid var(--red);
+            box-shadow: 0 0 26px 8px rgba(255,59,78,.6), inset 0 0 20px rgba(255,59,78,.25);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 18px;
+            margin-bottom: 16px;
             animation: pop .48s cubic-bezier(.34,1.56,.64,1) both, shk .38s ease-in-out .5s;
         }
-        .x-circle svg { color: var(--red); filter: drop-shadow(0 0 8px rgba(255,59,78,.85)); }
+        .x-circle svg { color: var(--red); filter: drop-shadow(0 0 10px rgba(255,59,78,.9)); }
         .er-ey {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
+            font-size: 16px;
             letter-spacing: .32em;
             text-transform: uppercase;
             color: var(--red);
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            font-weight: 700;
         }
         .er-ti {
             font-family: 'Bebas Neue', sans-serif;
-            font-size: clamp(56px, 11vw, 100px);
+            font-size: clamp(56px, 11vw, 95px);
             letter-spacing: .05em;
             line-height: 1;
             color: var(--red);
-            filter: drop-shadow(0 0 20px rgba(255,59,78,.55));
+            filter: drop-shadow(0 0 20px rgba(255,59,78,.6));
         }
         .er-mo {
-            font-size: 13px;
-            color: rgba(255,255,255,.48);
-            margin-top: 8px;
+            font-size: 16px;
+            color: rgba(255,255,255,.75);
+            margin-top: 10px;
             letter-spacing: .04em;
         }
         
@@ -390,6 +459,15 @@
     <div class="screw tl"></div><div class="screw tr"></div>
     <div class="screw bl"></div><div class="screw br"></div>
 
+    <!-- Indicador de Cámara Superior Agrandado y Visible -->
+    <div class="cam-indicator">
+        <svg class="cam-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <polyline points="4 12 12 4 20 12"></polyline>
+        </svg>
+        <span class="cam-text">Escanear aquí arriba</span>
+    </div>
+
     <div class="screen">
         <div class="baliza"><div id="bfill" class="baliza-fill idle"></div></div>
 
@@ -399,7 +477,7 @@
                 <div class="esp-top">
                     <p class="esp-ey">Acceso al Evento</p>
                     <h1 class="esp-ti">Escanea tu invitación</h1>
-                    <p class="esp-sb">Acerca el código QR de tu invitación al lector</p>
+                    <p class="esp-sb">Acerca el código QR de tu invitación a la cámara</p>
                 </div>
 
                 <div class="middle-layout">
@@ -412,7 +490,6 @@
                             <path d="M40,68 L96,68 L96,84 A12,12 0 0,1 84,96 L40,96 Z" fill="#8cc63f"/>
                         </svg>
                         <div class="logo-name">TELE URBAN</div>
-                        <!-- <div class="logo-tagline">Tu Comunicación, Tu Canal</div> -->
                     </div>
 
                     <!-- Centro: Escáner QR -->
@@ -450,6 +527,13 @@
                 <p class="ex-ey su1">✦ Acceso autorizado ✦</p>
                 <div class="ex-bv su2">¡Bienvenido!</div>
                 <div id="exito-nombre" class="ex-nm su3">—</div>
+
+                <!-- Bloque de Zona Asignada en Color Azul -->
+                <div id="exito-zona-box" class="ex-zona-box su3" style="display: none;">
+                    <span class="ex-zona-lbl">Zona Asignada</span>
+                    <span id="exito-zona-val" class="ex-zona-val">—</span>
+                </div>
+
                 <p id="exito-detalle" class="ex-sb su4">Disfruta el 26 Aniversario · Por favor pase adelante</p>
             </div>
 
@@ -483,7 +567,7 @@
     </div>
 
 <script>
-/* ═══ CANVAS FONDO (TÚNEL TENUE Y LENTO) ═══ */
+/* ═══ CANVAS FONDO ═══ */
 const bgC = document.getElementById('bgCanvas');
 const bgX = bgC.getContext('2d');
 let W, H, T = 0;
@@ -770,6 +854,8 @@ const estadoExito = document.getElementById('estado-exito');
 const estadoError = document.getElementById('estado-error');
 const exitoNombre = document.getElementById('exito-nombre');
 const exitoDetalle = document.getElementById('exito-detalle');
+const exitoZonaBox = document.getElementById('exito-zona-box');
+const exitoZonaVal = document.getElementById('exito-zona-val');
 const errorMotivo = document.getElementById('error-motivo');
 const neonFrame = document.getElementById('neon-frame');
 const balizaFill = document.getElementById('bfill');
@@ -783,12 +869,13 @@ function resetearPantalla() {
     estadoEspera.style.display = 'flex';
     estadoExito.classList.remove('visible');
     estadoError.classList.remove('visible');
+    exitoZonaBox.style.display = 'none';
 
     neonFrame.className = 'neon-frame idle';
     balizaFill.className = 'baliza-fill idle';
 }
 
-function mostrarAccesoExitoso(nombre, detalle) {
+function mostrarAccesoExitoso(nombre, detalle, zona, mesa) {
     if (resetTimeout) clearTimeout(resetTimeout);
 
     body.className = '';
@@ -800,6 +887,18 @@ function mostrarAccesoExitoso(nombre, detalle) {
 
     exitoNombre.textContent = nombre || 'INVITADO ESPECIAL';
     exitoDetalle.textContent = detalle || 'Disfruta el 26 Aniversario · Por favor pase adelante';
+
+    // Despliegue de Zona en azul eléctrico
+    if (zona && zona.trim() !== '') {
+        let textoZona = zona.toUpperCase();
+        if (mesa && mesa.trim() !== '') {
+            textoZona += ` · MESA ${mesa}`;
+        }
+        exitoZonaVal.textContent = textoZona;
+        exitoZonaBox.style.display = 'inline-flex';
+    } else {
+        exitoZonaBox.style.display = 'none';
+    }
 
     neonFrame.className = 'neon-frame idle';
     balizaFill.className = 'baliza-fill idle';
@@ -816,6 +915,7 @@ function mostrarAccesoDenegado(motivo) {
     estadoEspera.style.display = 'none';
     estadoExito.classList.remove('visible');
     estadoError.classList.add('visible');
+    exitoZonaBox.style.display = 'none';
 
     errorMotivo.textContent = motivo || 'Código QR no registrado o expirado';
 
@@ -838,7 +938,12 @@ function conectarWebSocket() {
         try {
             const data = JSON.parse(event.data);
             if (data.status === 'success' || data.action === 'unlock') {
-                mostrarAccesoExitoso(data.name || data.guest_name, data.message);
+                mostrarAccesoExitoso(
+                    data.nombre || data.name || data.guest_name,
+                    data.message || data.mensaje,
+                    data.zona || '',
+                    data.mesa || ''
+                );
             } else if (data.status === 'denied' || data.action === 'lock') {
                 mostrarAccesoDenegado(data.message || data.reason);
             }

@@ -119,6 +119,8 @@ async def recibir_qr(payload: QRPayload):
     if not uri_guest:
         msg_error = "Lectura de código QR inválida"
         print(f">> ERROR: No se pudo extraer uri_guest de: {payload.data}", flush=True)
+
+        zona = meta.get("zona") or info_invitado.get("zona") or  ""
         if ws_manager_global:
             try:
                 await ws_manager_global.broadcast({
@@ -239,6 +241,7 @@ async def recibir_qr(payload: QRPayload):
         "status": "success",
         "action": "unlock",
         "name": guest_name,
+        "zona": zona,
         "movimiento": tipo_movimiento,
         "message": mensaje_pantalla
     }
