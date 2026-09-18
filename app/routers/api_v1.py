@@ -1,13 +1,31 @@
+import os
+import re
 import json
+import sqlite3
+import httpx
+from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.database import init_db, procesar_acceso_db
+from dotenv import load_dotenv
 
+load_dotenv()
+
+# Router FastAPI
 router = APIRouter(prefix="/api")
 
-# Inicializar BD al cargar el router
-init_db()
+# Configuración y credenciales
+API_BASE_URL = os.getenv("API_BASE_URL", "https://eventos.grupoteleurban.com").rstrip("/")
+TURNSTILE_API_TOKEN = os.getenv(
+    "TURNSTILE_API_TOKEN", 
+    "0269ca762d1415c7db4b879ea9aef6dda0559bed3f7541ddee25996d7c72c2d6"
+)
+DEFAULT_EVENT_ID = os.getenv(
+    "DEFAULT_EVENT_ID", 
+    "0c45ac37f5b97b76c7e8a10b14ee77193827c5fe"
+)
+DB_PATH = os.getenv("DB_PATH", "/home/pi/lector_qr/setup/accesos.db")
 
+# Gestor de conexiones WebSocket global
 ws_manager_global = None
 
 def set_websocket_manager(manager):
@@ -16,76 +34,196 @@ def set_websocket_manager(manager):
 
 class QRPayload(BaseModel):
     data: str
-    source_camera: str = "webcam"
+    source_camera: str = "main_cam"
+
+ERROR_TRANSLATIONS = {
+    "invalid_credentials": "Error de autenticación de terminal",
+    "invalid_action": "Acción no permitida",
+    "ticket_not_found": "Boleto no registrado",
+    "invitation_not_accepted": "Invitación no confirmada",
+    "already_checked_in": "El boleto ya ingresó previamente",
+    "not_checked_in": "Sin registro de entrada",
+    "capacity_reached": "Aforo máximo alcanzado"
+}
+
+def parsear_contenido_qr(qr_raw: str):
+    """
+    Extrae uri_event y uri_guest a partir de URL, JSON o hash directo.
+    """
+    raw = qr_raw.strip()
+    
+    # 1. URL completa
+    url_match = re.search(r'/events/([a-fA-F0-9]+)/tickets/([a-fA-F0-9]+)', raw)
+    if url_match:
+        return url_match.group(1), url_match.group(2)
+
+    # 2. Formato JSON
+    try:
+        payload = json.loads(raw)
+        if isinstance(payload, dict):
+            ev = payload.get("event_id") or payload.get("uri_event") or DEFAULT_EVENT_ID
+            tk = payload.get("ticket_id") or payload.get("uri_guest") or payload.get("id")
+            if tk:
+                return str(ev), str(tk)
+    except Exception:
+        pass
+
+    # 3. Hash o token plano
+    return DEFAULT_EVENT_ID, raw
+
+
+def registrar_en_db(uri_guest: str, guest_name: str, status: str, tipo_movimiento: str, metadata: dict):
+    """Guarda la auditoría en la base de datos local SQLite."""
+    try:
+        zona = metadata.get("zona", "")
+        area = metadata.get("area", "")
+        mesa = metadata.get("mesa", "")
+        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS accesos_historial (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket_id TEXT,
+                    nombre TEXT,
+                    movimiento TEXT,
+                    estado TEXT,
+                    zona TEXT,
+                    area TEXT,
+                    mesa TEXT,
+                    fecha_hora TEXT
+                )
+            """)
+            cur.execute("""
+                INSERT INTO accesos_historial 
+                (ticket_id, nombre, movimiento, estado, zona, area, mesa, fecha_hora)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (uri_guest, guest_name, tipo_movimiento, status, zona, area, mesa, ahora))
+            conn.commit()
+    except Exception as e:
+        print(f"[SQLite ⚠️] Error al guardar en base local: {e}", flush=True)
+
 
 @router.post("/qr")
 async def recibir_qr(payload: QRPayload):
-    contenido = payload.data.strip()
     global ws_manager_global
 
-    # 1. Caso Acceso Denegado
-    if "RECHAZO" in contenido.upper() or "ERROR" in contenido.upper():
+    # 1. Extraer identificadores del QR leído
+    print("\n================ [QR DETECTADO] ================", flush=True)
+    print(f">> RAW DATA: '{payload.data}'", flush=True)
+
+    uri_event, uri_guest = parsear_contenido_qr(payload.data)
+    print(f">> PARSED: Evento='{uri_event}' | Ticket='{uri_guest}'", flush=True)
+
+    if not uri_guest:
+        msg_error = "Lectura de código QR inválida"
+        print(f">> ERROR: No se pudo extraer uri_guest de: {payload.data}", flush=True)
+        if ws_manager_global:
+            try:
+                await ws_manager_global.broadcast({
+                    "status": "denied",
+                    "nombre": "Acceso Denegado",
+                    "message": msg_error
+                })
+            except Exception as e:
+                print(f"[WebSocket ⚠️] {e}", flush=True)
+        return {"status": "denied", "action": "lock", "message": msg_error}
+
+    # 2. Preparar petición remota
+    url = f"{API_BASE_URL}/api/access/events/{uri_event}/tickets/{uri_guest}"
+    print(f">> LLAMANDO API: {url}", flush=True)
+    headers = {
+        "Authorization": f"Bearer {TURNSTILE_API_TOKEN}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    body = {"action": "check_in"}
+
+    # 3. Ejecución de la llamada HTTP
+    try:
+        async with httpx.AsyncClient(timeout=3.5) as client:
+            response = await client.post(url, headers=headers, json=body)
+            data_resp = response.json()
+            print(f">> HTTP STATUS: {response.status_code}", flush=True)
+            print(f">> RESPUESTA API: {data_resp}", flush=True)
+            print("================================================\n", flush=True)
+    except httpx.RequestError as exc:
+        print(f"[API ⚠️] Error de red con servidor central: {exc}", flush=True)
+        msg_red = "Error de conexión con el servidor"
+        if ws_manager_global:
+            try:
+                await ws_manager_global.broadcast({
+                    "status": "denied",
+                    "nombre": "Fallo de Red",
+                    "message": msg_red
+                })
+            except Exception as e:
+                print(f"[WebSocket ⚠️] {e}", flush=True)
+        return {"status": "denied", "action": "lock", "message": msg_red}
+    except Exception as e:
+        print(f"[API ⚠️] Error procesando JSON de respuesta: {e}", flush=True)
+        return {"status": "denied", "action": "lock", "message": "Error interno de validación"}
+
+    # 4. Evaluación de la respuesta
+    allowed = data_resp.get("allowed", False)
+    code = data_resp.get("code", "unknown")
+    info_invitado = data_resp.get("data") or {}
+    meta = info_invitado.get("metadata") or {}
+
+    # Caso: Rechazo por backend (401, 404, 409, etc.)
+    if not allowed:
+        motivo_error = ERROR_TRANSLATIONS.get(code, data_resp.get("message", "Acceso denegado"))
+        
+        # Registrar auditoría de rechazo
+        registrar_en_db(uri_guest, "Desconocido", code, "RECHAZO", meta)
+
         if ws_manager_global:
             try:
                 await ws_manager_global.broadcast({
                     "status": "denied",
                     "nombre": "Acceso Denegado",
                     "name": "Acceso Denegado",
-                    "message": "Boleto Inválido o Duplicado",
-                    "mensaje": "Boleto Inválido o Duplicado"
+                    "message": motivo_error,
+                    "mensaje": motivo_error
                 })
             except Exception as e:
-                print(f"[API ⚠️] Error en broadcast WebSocket: {e}")
+                print(f"[WebSocket ⚠️] {e}", flush=True)
 
-        return {"status": "denied", "action": "lock", "message": "Acceso Denegado"}
+        return {
+            "status": "denied",
+            "action": "lock",
+            "code": code,
+            "message": motivo_error
+        }
 
-    # 2. Extracción de Identificador y Nombre
-    qr_id = contenido
-    nombre_invitado = "Invitado"
-
-    try:
-        datos_json = json.loads(contenido)
-        if isinstance(datos_json, dict):
-            nombre_invitado = str(datos_json.get("nombre", datos_json.get("n", datos_json.get("name", "Invitado")))).strip()
-            qr_id = str(datos_json.get("id", nombre_invitado))
-    except Exception:
-        if contenido.startswith("NOM:"):
-            nombre_invitado = contenido.replace("NOM:", "").strip()
-            qr_id = nombre_invitado
-        elif "DAVID" in contenido.upper():
-            nombre_invitado = "Luis David Gonzalez"
-            qr_id = "DAVID"
-        elif len(contenido) > 0:
-            nombre_invitado = contenido
-            qr_id = contenido
-
-    # 3. Procesar estado en SQLite
-    try:
-        tipo_movimiento, nuevo_estado = procesar_acceso_db(qr_id, nombre_invitado)
-    except Exception as e:
-        print(f"[API ⚠️] Error en base de datos SQLite: {e}")
-        tipo_movimiento = "ENTRADA"
-        nuevo_estado = "ADENTRO"
-
-    # 4. Definir mensaje_pantalla ANTES de armar el payload
-    if tipo_movimiento == "ENTRADA":
-        mensaje_pantalla = "Disfruta el 26 Aniversario · Por favor pase adelante"
+    # Caso: Acceso Aprobado (allowed == True)
+    guest_name = info_invitado.get("guest_name") or meta.get("name") or "Invitado"
+    zona = meta.get("zona", "")
+    mesa = meta.get("mesa", "")
+    
+    if code == "checked_out":
+        tipo_movimiento = "SALIDA"
+        mensaje_pantalla = "¡Hasta pronto! Gracias por acompañarnos"
     else:
-        mensaje_pantalla = "Gracias por acompañarnos en el 26 Aniversario · ¡Hasta pronto!"
+        tipo_movimiento = "ENTRADA"
+        ubicacion = f"Mesa {mesa}" if mesa else (f"Zona {zona}" if zona else "26 Aniversario")
+        mensaje_pantalla = f"{ubicacion} · Por favor pase adelante"
 
-    # 5. Notificación por WebSocket a la pantalla
+    # Guardar acceso exitoso en SQLite
+    registrar_en_db(uri_guest, guest_name, code, tipo_movimiento, meta)
+
+    # Notificar pantalla por WebSocket
     if ws_manager_global:
         try:
             payload_ws = {
                 "status": "success",
-                "nombre": nombre_invitado,
-                "name": nombre_invitado,
-                "invitado": nombre_invitado,
-                "user": nombre_invitado,
-                "guest": nombre_invitado,
-                "persona": nombre_invitado,
+                "nombre": guest_name,
+                "name": guest_name,
+                "invitado": guest_name,
+                "zona": zona,
+                "mesa": mesa,
                 "tipo_movimiento": tipo_movimiento,
-                "estado": nuevo_estado,
                 "message": mensaje_pantalla,
                 "mensaje": mensaje_pantalla
             }
@@ -94,14 +232,13 @@ async def recibir_qr(payload: QRPayload):
             elif hasattr(ws_manager_global, "send_json"):
                 await ws_manager_global.send_json(payload_ws)
         except Exception as e:
-            print(f"[API ⚠️] Error al enviar WebSocket: {e}")
+            print(f"[WebSocket ⚠️] Error al enviar WebSocket: {e}", flush=True)
 
-    # 6. Respuesta HTTP 200 al orquestador de hardware
+    # Retorno al orquestador de hardware para activar el relé
     return {
         "status": "success",
         "action": "unlock",
-        "name": nombre_invitado,
+        "name": guest_name,
         "movimiento": tipo_movimiento,
-        "estado": nuevo_estado,
         "message": mensaje_pantalla
     }
