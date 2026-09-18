@@ -21,7 +21,7 @@ TURNSTILE_API_TOKEN = os.getenv(
 )
 DEFAULT_EVENT_ID = os.getenv(
     "DEFAULT_EVENT_ID", 
-    "0c45ac37f5b97b76c7e8a10b14ee77193827c5fe"
+    "48688d656de57df20054ded3047aae5b64c6151c"
 )
 DB_PATH = os.getenv("DB_PATH", "/home/pi/lector_qr/setup/accesos.db")
 
