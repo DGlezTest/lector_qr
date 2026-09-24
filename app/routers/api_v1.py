@@ -180,11 +180,10 @@ async def recibir_qr(payload: QRPayload):
             "message": motivo_error
         }
 
-    # Acceso Aprobado: Extraer datos del invitado incluyendo el COLOR de la mesa
+    # Acceso Aprobado: Extraer los datos de ubicación del invitado
     guest_name = info_invitado.get("guest_name") or meta.get("name") or "Invitado"
     zona = meta.get("zona", "")
     mesa = meta.get("mesa", "")
-    color = meta.get("color", "") # <- Extrae "NEGRO", "AZUL", "ROJO", etc.
     
     if code == "checked_out":
         tipo_movimiento = "SALIDA"
@@ -205,7 +204,6 @@ async def recibir_qr(payload: QRPayload):
                 "invitado": guest_name,
                 "zona": zona,
                 "mesa": mesa,
-                "color": color, # <- Se envía al HTML
                 "tipo_movimiento": tipo_movimiento,
                 "message": mensaje_pantalla,
                 "mensaje": mensaje_pantalla
@@ -221,7 +219,7 @@ async def recibir_qr(payload: QRPayload):
         "status": "success",
         "action": "unlock",
         "name": guest_name,
+        "zona": zona,
         "mesa": mesa,
-        "color": color,
         "message": mensaje_pantalla
     }

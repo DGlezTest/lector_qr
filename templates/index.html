@@ -357,7 +357,7 @@
         }
         
         /* Círculo de color más grande y limpio (sin números) */
-        .color-circle-badge {
+        .zona-circle-badge {
             width: 58px;
             height: 58px;
             border-radius: 50%;
@@ -537,8 +537,8 @@
                 <div id="exito-zona-box" class="ex-zona-box su3" style="display: none;">
                     <span class="ex-zona-lbl">Ubicación Asignada</span>
                     <div style="display: flex; align-items: center; gap: 18px; margin-top: 6px;">
-                        <!-- Círculo grande del color asignado -->
-                        <div id="exito-color-badge" class="color-circle-badge" style="display: none;"></div>
+                        <!-- Círculo grande de la zona asignada -->
+                        <div id="exito-zona-badge" class="zona-circle-badge" style="display: none;"></div>
                         <span id="exito-zona-val" class="ex-zona-val">—</span>
                     </div>
                 </div>
@@ -865,7 +865,7 @@ const exitoNombre = document.getElementById('exito-nombre');
 const exitoDetalle = document.getElementById('exito-detalle');
 const exitoZonaBox = document.getElementById('exito-zona-box');
 const exitoZonaVal = document.getElementById('exito-zona-val');
-const exitoColorBadge = document.getElementById('exito-color-badge');
+const exitoZonaBadge = document.getElementById('exito-zona-badge');
 const errorMotivo = document.getElementById('error-motivo');
 const neonFrame = document.getElementById('neon-frame');
 const balizaFill = document.getElementById('bfill');
@@ -885,9 +885,9 @@ function resetearPantalla() {
     balizaFill.className = 'baliza-fill idle';
 }
 
-function obtenerEstilosColorMesa(colorNombre) {
-    if (!colorNombre) return { bg: '#333333', border: '#ffffff' };
-    const c = colorNombre.trim().toUpperCase();
+function obtenerEstilosZona(zonaNombre) {
+    if (!zonaNombre) return { bg: '#333333', border: '#ffffff' };
+    const c = zonaNombre.trim().toUpperCase().replace(/^ZONA\s+/, '');
     
     const colores = {
         'NEGRO': { bg: '#000000', border: '#ffffff' },
@@ -904,7 +904,7 @@ function obtenerEstilosColorMesa(colorNombre) {
     return colores[c] || { bg: c, border: '#ffffff' };
 }
 
-function mostrarAccesoExitoso(nombre, detalle, zona, mesa, color) {
+function mostrarAccesoExitoso(nombre, detalle, zona, mesa) {
     if (resetTimeout) clearTimeout(resetTimeout);
 
     body.className = '';
@@ -917,25 +917,24 @@ function mostrarAccesoExitoso(nombre, detalle, zona, mesa, color) {
     exitoNombre.textContent = nombre || 'INVITADO ESPECIAL';
     exitoDetalle.textContent = detalle || 'Disfruta el 26 Aniversario · Por favor pase adelante';
 
-    // Se omite la zona y solo se procesa la Mesa
     let textoMesa = '';
     if (mesa && mesa.trim() !== '') {
         textoMesa = `MESA ${mesa.trim()}`;
     }
 
-    if (textoMesa !== '' || (color && color.trim() !== '')) {
+    if (textoMesa !== '' || (zona && zona.trim() !== '')) {
         exitoZonaVal.textContent = textoMesa || 'UBICACIÓN';
 
-        // Círculo grande sin número adentro
-        if (color && color.trim() !== '') {
-            const estilosColor = obtenerEstilosColorMesa(color);
-            exitoColorBadge.style.backgroundColor = estilosColor.bg;
-            exitoColorBadge.style.borderColor = estilosColor.border;
-            exitoColorBadge.style.boxShadow = `0 0 22px ${estilosColor.border}`;
-            exitoColorBadge.textContent = ''; // Limpio sin texto
-            exitoColorBadge.style.display = 'inline-block';
+        // El círculo representa la zona y permanece sin texto en su interior.
+        if (zona && zona.trim() !== '') {
+            const estilosZona = obtenerEstilosZona(zona);
+            exitoZonaBadge.style.backgroundColor = estilosZona.bg;
+            exitoZonaBadge.style.borderColor = estilosZona.border;
+            exitoZonaBadge.style.boxShadow = `0 0 22px ${estilosZona.border}`;
+            exitoZonaBadge.textContent = '';
+            exitoZonaBadge.style.display = 'inline-block';
         } else {
-            exitoColorBadge.style.display = 'none';
+            exitoZonaBadge.style.display = 'none';
         }
 
         exitoZonaBox.style.display = 'inline-flex';
@@ -985,8 +984,7 @@ function conectarWebSocket() {
                     data.nombre || data.name || data.guest_name,
                     data.message || data.mensaje,
                     data.zona || '',
-                    data.mesa || '',
-                    data.color || ''
+                    data.mesa || ''
                 );
             } else if (data.status === 'denied' || data.action === 'lock') {
                 mostrarAccesoDenegado(data.message || data.reason);
