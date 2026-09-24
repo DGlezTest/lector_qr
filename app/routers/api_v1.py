@@ -10,10 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Router FastAPI
 router = APIRouter(prefix="/api")
 
-# Configuración y credenciales
 API_BASE_URL = os.getenv("API_BASE_URL", "https://eventos.grupoteleurban.com").rstrip("/")
 TURNSTILE_API_TOKEN = os.getenv(
     "TURNSTILE_API_TOKEN", 
@@ -25,7 +23,6 @@ DEFAULT_EVENT_ID = os.getenv(
 )
 DB_PATH = os.getenv("DB_PATH", "/home/pi/lector_qr/setup/accesos.db")
 
-# Gestor de conexiones WebSocket global
 ws_manager_global = None
 
 def set_websocket_manager(manager):
@@ -47,17 +44,11 @@ ERROR_TRANSLATIONS = {
 }
 
 def parsear_contenido_qr(qr_raw: str):
-    """
-    Extrae uri_event y uri_guest a partir de URL, JSON o hash directo.
-    """
     raw = qr_raw.strip()
-    
-    # 1. URL completa
     url_match = re.search(r'/events/([a-fA-F0-9]+)/tickets/([a-fA-F0-9]+)', raw)
     if url_match:
         return url_match.group(1), url_match.group(2)
 
-    # 2. Formato JSON
     try:
         payload = json.loads(raw)
         if isinstance(payload, dict):
@@ -68,12 +59,10 @@ def parsear_contenido_qr(qr_raw: str):
     except Exception:
         pass
 
-    # 3. Hash o token plano
     return DEFAULT_EVENT_ID, raw
 
 
 def registrar_en_db(uri_guest: str, guest_name: str, status: str, tipo_movimiento: str, metadata: dict):
-    """Guarda la auditoría en la base de datos local SQLite."""
     try:
         zona = metadata.get("zona", "")
         area = metadata.get("area", "")
@@ -109,7 +98,6 @@ def registrar_en_db(uri_guest: str, guest_name: str, status: str, tipo_movimient
 async def recibir_qr(payload: QRPayload):
     global ws_manager_global
 
-    # 1. Extraer identificadores del QR leído
     print("\n================ [QR DETECTADO] ================", flush=True)
     print(f">> RAW DATA: '{payload.data}'", flush=True)
 
@@ -120,7 +108,6 @@ async def recibir_qr(payload: QRPayload):
         msg_error = "Lectura de código QR inválida"
         print(f">> ERROR: No se pudo extraer uri_guest de: {payload.data}", flush=True)
 
-        zona = meta.get("zona") or info_invitado.get("zona") or  ""
         if ws_manager_global:
             try:
                 await ws_manager_global.broadcast({
@@ -132,7 +119,6 @@ async def recibir_qr(payload: QRPayload):
                 print(f"[WebSocket ⚠️] {e}", flush=True)
         return {"status": "denied", "action": "lock", "message": msg_error}
 
-    # 2. Preparar petición remota
     url = f"{API_BASE_URL}/api/access/events/{uri_event}/tickets/{uri_guest}"
     print(f">> LLAMANDO API: {url}", flush=True)
     headers = {
@@ -142,7 +128,6 @@ async def recibir_qr(payload: QRPayload):
     }
     body = {"action": "check_in"}
 
-    # 3. Ejecución de la llamada HTTP
     try:
         async with httpx.AsyncClient(timeout=3.5) as client:
             response = await client.post(url, headers=headers, json=body)
@@ -167,17 +152,13 @@ async def recibir_qr(payload: QRPayload):
         print(f"[API ⚠️] Error procesando JSON de respuesta: {e}", flush=True)
         return {"status": "denied", "action": "lock", "message": "Error interno de validación"}
 
-    # 4. Evaluación de la respuesta
     allowed = data_resp.get("allowed", False)
     code = data_resp.get("code", "unknown")
     info_invitado = data_resp.get("data") or {}
     meta = info_invitado.get("metadata") or {}
 
-    # Caso: Rechazo por backend (401, 404, 409, etc.)
     if not allowed:
         motivo_error = ERROR_TRANSLATIONS.get(code, data_resp.get("message", "Acceso denegado"))
-        
-        # Registrar auditoría de rechazo
         registrar_en_db(uri_guest, "Desconocido", code, "RECHAZO", meta)
 
         if ws_manager_global:
@@ -199,10 +180,11 @@ async def recibir_qr(payload: QRPayload):
             "message": motivo_error
         }
 
-    # Caso: Acceso Aprobado (allowed == True)
+    # Acceso Aprobado: Extraer datos del invitado incluyendo el COLOR de la mesa
     guest_name = info_invitado.get("guest_name") or meta.get("name") or "Invitado"
     zona = meta.get("zona", "")
     mesa = meta.get("mesa", "")
+    color = meta.get("color", "") # <- Extrae "NEGRO", "AZUL", "ROJO", etc.
     
     if code == "checked_out":
         tipo_movimiento = "SALIDA"
@@ -212,10 +194,8 @@ async def recibir_qr(payload: QRPayload):
         ubicacion = f"Mesa {mesa}" if mesa else (f"Zona {zona}" if zona else "26 Aniversario")
         mensaje_pantalla = f"{ubicacion} · Por favor pase adelante"
 
-    # Guardar acceso exitoso en SQLite
     registrar_en_db(uri_guest, guest_name, code, tipo_movimiento, meta)
 
-    # Notificar pantalla por WebSocket
     if ws_manager_global:
         try:
             payload_ws = {
@@ -225,6 +205,7 @@ async def recibir_qr(payload: QRPayload):
                 "invitado": guest_name,
                 "zona": zona,
                 "mesa": mesa,
+                "color": color, # <- Se envía al HTML
                 "tipo_movimiento": tipo_movimiento,
                 "message": mensaje_pantalla,
                 "mensaje": mensaje_pantalla
@@ -236,12 +217,11 @@ async def recibir_qr(payload: QRPayload):
         except Exception as e:
             print(f"[WebSocket ⚠️] Error al enviar WebSocket: {e}", flush=True)
 
-    # Retorno al orquestador de hardware para activar el relé
     return {
         "status": "success",
         "action": "unlock",
         "name": guest_name,
-        "zona": zona,
-        "movimiento": tipo_movimiento,
+        "mesa": mesa,
+        "color": color,
         "message": mensaje_pantalla
     }
